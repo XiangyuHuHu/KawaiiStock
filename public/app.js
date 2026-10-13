@@ -222,7 +222,7 @@ function renderOverview(desk) {
   if (account.id === 'agentic' && writable) {
     fetch('/api/risk?book=live').then((r) => r.json()).then((gate) => {
       const extra = {
-        'Gateway': `${gate.mode || (gate.kill ? 'KILL' : 'NORMAL')}${gate.modeReason ? ` · ${gate.modeReason}` : ''}`,
+        'Gateway': `${gate.mode === 'NOT_CONFIGURED' ? '未配置' : (gate.mode || (gate.kill ? 'KILL' : 'NORMAL'))}${gate.modeReason ? ` · ${gate.modeReason}` : ''}`,
         '单笔亏损': gate.caps?.maxOrderRisk != null ? `$${Number(gate.caps.maxOrderRisk).toFixed(0)}（3%净值）` : '3%净值',
         '单标 / 主题': gate.caps?.maxSingleRisk != null
           ? `$${Number(gate.caps.maxSingleRisk).toFixed(0)} / $${Number(gate.caps.maxThemeRisk || 0).toFixed(0)}`
@@ -483,6 +483,19 @@ function recBookHtml(book, score) {
       <thead><tr><th>代码</th><th>动作</th><th>来源</th><th>策略 / 胜率</th><th>工具</th><th class="num">失效价</th><th>最大亏损</th><th>结论</th><th>理由</th></tr></thead>
       <tbody>${oppRows || '<tr><td colspan="9">无合格新机会</td></tr>'}</tbody>
     </table></div>
+    ${Array.isArray(book.paperCandidates) ? `<h3>纸上实验候选</h3>
+    <p class="muted">${esc(book.paperViewNote || '纸上实验独立视图，不是第二份推荐。与新机会重叠的代码只是同一排序的另一视角。')}</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>代码</th><th>动作</th><th>视图</th><th>策略 / 胜率</th><th class="num">纸上止损</th><th>结论</th></tr></thead>
+      <tbody>${book.paperCandidates.map((row) => `<tr>
+        <td>${esc(row.symbol || '')}</td>
+        <td>${esc(row.action || '')}</td>
+        <td>${row.overlapsOpportunities ? '与新机会重叠' : '仅纸上视图'}</td>
+        <td>${esc(recStrategy(row, score))}</td>
+        <td class="num">${pxCell(row.failPrice)}</td>
+        <td>${esc(row.title || '')}</td>
+      </tr>`).join('') || '<tr><td colspan="6">本账户没有纸上实验候选。</td></tr>'}</tbody>
+    </table></div>` : ''}
   </section>`;
 }
 

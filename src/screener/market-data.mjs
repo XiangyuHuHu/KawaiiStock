@@ -1,23 +1,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { PUBLIC_DEMO_UNIVERSE, demoWatchlist } from "../demo-pool.js";
+import { OBSIDIAN_LISTS } from "../paths.js";
 import { getChinaPayload } from "./cn-market-data.mjs";
 
-const FALLBACK_UNIVERSE = [
-  { symbol: "AAPL", cik: "0000320193", sector: "Technology" },
-  { symbol: "MSFT", cik: "0000789019", sector: "Technology" },
-  { symbol: "GOOGL", cik: "0001652044", sector: "Communication Services" },
-  { symbol: "AMZN", cik: "0001018724", sector: "Consumer Discretionary" },
-  { symbol: "META", cik: "0001326801", sector: "Communication Services" },
-  { symbol: "NVDA", cik: "0001045810", sector: "Technology" },
-  { symbol: "AVGO", cik: "0001730168", sector: "Technology" },
-  { symbol: "JPM", cik: "0000019617", sector: "Financials", valuationType: "bank" },
-  { symbol: "V", cik: "0001403161", sector: "Financials" },
-  { symbol: "MU", cik: "0000723125", sector: "Technology" },
-];
+const FALLBACK_UNIVERSE = PUBLIC_DEMO_UNIVERSE;
 
-const WATCHLIST_DIR = process.env.KAWAII_LIST_DIR
-  ?? process.env.OBSIDIAN_LISTS
-  ?? "D:\\Obsidian仓库\\Kawaii的仓库\\投资\\股票\\List\\美股\\KawaiiList";
+const WATCHLIST_DIR = process.env.KAWAII_LIST_DIR || OBSIDIAN_LISTS;
 const responseCache = new Map();
 const stockDataCache = new Map();
 const fullWatchlistCache = new Map();
@@ -69,7 +58,7 @@ function watchlistIdFromFilename(filename) {
   return filename.replace(/\.md$/i, "").replace(/^\d+\s*/, "").replace(/\s+/g, "-").toLowerCase();
 }
 
-async function loadWatchlists() {
+export async function loadWatchlists() {
   try {
     const entries = await fs.readdir(WATCHLIST_DIR, { withFileTypes: true });
     const files = entries
@@ -107,16 +96,7 @@ async function loadWatchlists() {
     console.warn(`Unable to read KawaiiList: ${error.message}`);
   }
 
-  return [{
-    id: "public-demo",
-    title: "Public demo",
-    filename: null,
-    filePath: null,
-    updated: null,
-    modifiedAt: null,
-    symbols: FALLBACK_UNIVERSE.map((stock) => stock.symbol),
-    total: FALLBACK_UNIVERSE.length,
-  }];
+  return [demoWatchlist()];
 }
 
 async function getCompanyTickerLookup() {
@@ -1001,6 +981,8 @@ async function loadMarketData({ watchlistId, page, pageSize, presetId = "all" },
   return {
     stocks: validStocks,
     generatedAt: new Date().toISOString(),
+    listNote: activeWatchlist.note || null,
+    fallback: activeWatchlist.fallback || null,
     watchlists: watchlists.map((watchlist) => ({
       id: watchlist.id,
       title: watchlist.title,
@@ -1008,6 +990,8 @@ async function loadMarketData({ watchlistId, page, pageSize, presetId = "all" },
       updated: watchlist.updated,
       filename: watchlist.filename,
       symbols: watchlist.symbols,
+      note: watchlist.note || null,
+      fallback: watchlist.fallback || null,
     })),
     activeWatchlist: {
       id: activeWatchlist.id,
@@ -1016,6 +1000,8 @@ async function loadMarketData({ watchlistId, page, pageSize, presetId = "all" },
       updated: activeWatchlist.updated,
       filename: activeWatchlist.filename,
       sourcePath: activeWatchlist.filePath,
+      note: activeWatchlist.note || null,
+      fallback: activeWatchlist.fallback || null,
     },
     pagination: {
       page: currentPage,

@@ -175,6 +175,7 @@ function renderTable() {
   const currency = state.market === 'cn' ? 'CNY' : 'USD';
   const paging = state.data?.pagination;
   const status = document.getElementById('screenerStatus');
+  const demoNote = state.data?.listNote ? `${state.data.listNote} ` : '';
   if (state.loading && !state.data) {
     status.textContent = '正在加载公开行情与财报。';
     document.getElementById('universeTable').innerHTML = '<p class="empty">正在加载观察池。</p>';
@@ -182,13 +183,13 @@ function renderTable() {
     return;
   }
   if (state.data?.error || state.data?.detail) {
-    status.textContent = state.data.detail || state.data.error;
+    status.textContent = `${demoNote}${state.data.detail || state.data.error}`;
   } else if (state.data?.partial) {
-    status.textContent = '部分数据源暂时不可用，下面显示已成功获取的公司。';
+    status.textContent = `${demoNote}部分数据源暂时不可用，下面显示已成功获取的公司。`;
   } else {
     status.textContent = paging
-      ? `${state.data.activeWatchlist?.title || ''}：本页 ${state.data.stocks.length} 只，序号 ${paging.start}–${paging.end}，总计 ${paging.total} 只。${state.loading ? ' 刷新中…' : ''}`
-      : '';
+      ? `${demoNote}${state.data.activeWatchlist?.title || ''}：本页 ${state.data.stocks.length} 只，序号 ${paging.start}–${paging.end}，总计 ${paging.total} 只。${state.loading ? ' 刷新中…' : ''}`
+      : demoNote;
   }
   if (!stocks.length) {
     document.getElementById('universeTable').innerHTML = `<p class="empty">${state.search ? `没有找到“${escapeHtml(state.search)}”。` : '当前页没有股票满足这个筛选。'}</p>`;

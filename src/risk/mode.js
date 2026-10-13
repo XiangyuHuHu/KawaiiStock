@@ -1,7 +1,8 @@
-export const MODES = ['NORMAL', 'REDUCE_ONLY', 'PROTECT', 'KILL'];
+export const MODES = ['NORMAL', 'NOT_CONFIGURED', 'REDUCE_ONLY', 'PROTECT', 'KILL'];
 
 const RANK = {
   NORMAL: 0,
+  NOT_CONFIGURED: 1,
   REDUCE_ONLY: 1,
   PROTECT: 2,
   KILL: 3
@@ -59,6 +60,9 @@ export function deriveAutoMode(book = {}, limits = {}, extras = {}) {
   }
   if ((extras.rejectCount || 0) >= (limits.maxRejectsPerDay || 5)) {
     return { mode: 'REDUCE_ONLY', reason: `当日拒单 ${(extras.rejectCount || 0)} 次，暂停新开仓` };
+  }
+  if (book.book === 'live' && book.holdingsConfigured === false) {
+    return { mode: 'NOT_CONFIGURED', reason: '持仓档案未配置' };
   }
   if (book.holdingsFresh === false && book.book === 'live') {
     return { mode: 'REDUCE_ONLY', reason: '持仓档案不是今日实时' };

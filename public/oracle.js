@@ -86,7 +86,7 @@ function pathSvg(pack) {
 
 function renderEmpty(pack) {
   $('oracleFreshness').innerHTML = '';
-  $('oracleVerdict').innerHTML = `<div class="option-alert"><strong>这一天还没有盘面</strong><p>${esc(pack.note || '')}</p><p>刷新只重取已录入盘面的行情，不会自动起局或把旧盘改成今天。</p>${pack.dates?.length?`<button type="button" class="text-btn" data-qimen-latest="${esc(pack.dates[0])}">查看最近盘面 · ${esc(pack.dates[0])}</button>`:''}</div>`;
+  $('oracleVerdict').innerHTML = `<div class="option-alert"><strong>这一天还没有盘面</strong><p>${esc(pack.note || '')}</p><p>点「保存奇门对照」会为今天用 qimen-current 自动起盘并写入。更早的日期不回填，刷新也不会把旧盘改成今天。</p>${pack.dates?.length?`<button type="button" class="text-btn" data-qimen-latest="${esc(pack.dates[0])}">查看最近盘面 · ${esc(pack.dates[0])}</button>`:''}</div>`;
   $('oraclePalaces').innerHTML = '';
   $('oracleNotes').innerHTML = '';
   $('oraclePath').innerHTML = '';
@@ -171,7 +171,7 @@ function qimenControls() {
   ['oracleQimenMode','oracleQimenScope','oracleQimenRefresh','oracleQimenToday'].forEach(id=>$(id).disabled=state.qimenBusy);
   ['oracleQimenDate','oracleRecorded'].forEach(id=>$(id).disabled=state.qimenBusy || current);
   $('oracleQimenScope').hidden=!current;
-  $('oracleWriteBtn').disabled=state.qimenBusy || current || !state.pack || state.pack.empty;
+  $('oracleWriteBtn').disabled=state.qimenBusy || current || !state.pack;
   $('oracleQimenRefresh').textContent=state.qimenBusy?'正在更新…':current?'按当前时间刷新九宫':'刷新历史盘行情';
 }
 
@@ -194,7 +194,7 @@ async function loadQimen({refresh=false,write=false}={}) {
       $('oracleRecorded').innerHTML='<option value="">选择已录入日期</option>'+(pack.dates||[]).map(d=>`<option value="${esc(d)}">${esc(d)}</option>`).join('');
       $('oracleRecorded').value=(pack.dates||[]).includes(pack.date)?pack.date:'';
       render(pack);
-      $('oracleQimenStatus').textContent=write?'已保存历史研究对照。':`${pack.date} · ${pack.empty?'没有该日手工原盘；可切回“当前自动盘”生成新盘':`行情 ${pack.session?.barCount || 0} 根完整 K 线`}`;
+      $('oracleQimenStatus').textContent=write?(pack.generatedChart?'已用 qimen-current 生成今天的盘并保存。':'已保存历史研究对照。'):`${pack.date} · ${pack.empty?'没有该日手工原盘。保存会为今天用 qimen-current 自动起盘；更早的日期不回填':`行情 ${pack.session?.barCount || 0} 根完整 K 线`}`;
     }
   } catch(error) {
     if(!write){state.pack=null;renderEmpty({note:`读取失败：${error.message}；请点击刷新重试。`});}

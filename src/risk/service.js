@@ -36,7 +36,7 @@ function bookPositions(holdings) {
 export async function liveBookSnapshot() {
   const config = await loadAccounts('grok');
   const account = accountById(config, 'agentic');
-  const holdings = account ? await loadHoldings(account) : {};
+  const holdings = account ? await loadHoldings(account) : { configured: false, missing: true };
   const freshness = holdingsFreshness(holdings);
   const nav = holdingsNav(holdings);
   const realized = await realizedAgenticFromActuals();
@@ -67,7 +67,8 @@ export async function liveBookSnapshot() {
     modeReason: slice.reason,
     kill: slice.mode === 'KILL',
     killReason: slice.reason,
-    holdingsFresh: freshness.fresh,
+    holdingsConfigured: freshness.configured !== false,
+    holdingsFresh: freshness.configured === false ? null : freshness.fresh,
     asOf: holdings.asOf || null,
     stale: freshness.stale
   };
@@ -153,6 +154,7 @@ export async function getRiskView(book = 'live') {
     phase: limits.phase,
     mode: mode.mode,
     modeReason: mode.reason,
+    configured: snap.holdingsConfigured !== false,
     locked: mode.locked,
     limits,
     caps: limits.caps,

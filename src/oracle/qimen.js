@@ -5,6 +5,7 @@ import { sessionOpenMs } from '../market-time.js';
 import { regularSession, sessionCloseMs } from '../options/time.js';
 import { loadChart } from '../options/market.js';
 import { validOracleDay } from './symbols.js';
+import { currentQimenChart } from './qimen-current.js';
 
 export const ORACLE_NOTE = '奇门对照是研究/娱乐，不是下单指令。不写进推荐操作 / 模拟操作 / 实际操作。缺文件不让每日任务失败。用 SPY 5 分钟 K 对照 SPX 盘面。';
 
@@ -313,11 +314,51 @@ export async function listOracleDates() {
   }
 }
 
-export async function buildOracleDesk({ date, now = Date.now(), loader = loadChart, refresh = false } = {}) {
+export function spxReadingFromCurrent(chart, date) {
+  const yong = (chart?.palaces || []).find((row) => row.yong) || null;
+  const palace = yong ? `${yong.bagua}${yong.num}宫` : '未标记用神宫';
+  const shiGan = chart?.raw?.['時干'] || null;
+  return {
+    type: 'qimen-spx-reading',
+    date,
+    liveTrading: false,
+    draft: true,
+    source: 'qimen-current',
+    generated: true,
+    recordedAt: chart?.effectiveAt ? new Date(chart.effectiveAt).toISOString() : null,
+    title: `SPX 奇门 · 时干${shiGan || '—'}落${palace}`,
+    instrument: { symbol: 'SPY', proxyFor: 'SPX', note: 'Yahoo/Nasdaq SPY 5 分钟 K，不是 SPX 期货。盘面由 qimen-current 按北京时间整点生成。' },
+    chart: {
+      shiGan,
+      yongShen: 'SPX',
+      palace,
+      palaceId: yong?.id || null,
+      men: yong?.men || null,
+      palaces: chart?.palaces || [],
+      qimenDate: chart?.date || null,
+      effectiveAt: chart?.effectiveAt || null,
+      key: chart?.key || null,
+      method: 'qimen-current'
+    },
+    bias: '自动时盘对照',
+    rules: ['高处不追', '低处不慌', '顺势而行'],
+    analysis: [
+      '本盘由 qimen-current 在写入时自动生成，用来补上当天还没有手工盘的空档。',
+      '不套用 2026-09-16 的「先抑后扬」路径，也不把时盘当成下单信号。'
+    ],
+    rhythm: [],
+    risks: ['自动盘只提供宫位，路径评分保持待对照。'],
+    watchWindows: [],
+    phases: [],
+    schematic: []
+  };
+}
+
+export async function buildOracleDesk({ date, now = Date.now(), loader = loadChart, refresh = false, reading: injected } = {}) {
   const day = date || todayStamp(new Date(now));
   if (!validOracleDay(day)) throw new Error('观察日无效');
-  const saved = await loadOracleFile(day);
-  const reading = saved || BUILTIN[day] || null;
+  const saved = injected ? null : await loadOracleFile(day);
+  const reading = injected || saved || BUILTIN[day] || null;
   if (reading && reading.date !== day) throw new Error('原始盘面日期与文件日期不一致，拒绝套用');
   if (!reading) {
     return {
@@ -326,7 +367,7 @@ export async function buildOracleDesk({ date, now = Date.now(), loader = loadCha
       liveTrading: false,
       date: day,
       dates: await listOracleDates(),
-      note: `还没有 ${day} 的奇门盘面。可以先看已录入的日期。${ORACLE_NOTE}`
+      note: `还没有 ${day} 的奇门盘面。保存今天的对照会用 qimen-current 自动起盘并写入；更早的日期不回填。${ORACLE_NOTE}`
     };
   }
   const symbol = reading.instrument?.symbol || 'SPY';
@@ -346,6 +387,27 @@ export async function buildOracleDesk({ date, now = Date.now(), loader = loadCha
   pack.ok = true;
   pack.cached = Boolean(saved);
   pack.dates = await listOracleDates();
+  return pack;
+}
+
+export async function ensureOracleWrite({ date, now = Date.now(), loader, refresh = false } = {}) {
+  const day = date || todayStamp(new Date(now));
+  let pack = await buildOracleDesk({ date: day, now, loader, refresh });
+  if (pack.empty) {
+    if (day !== todayStamp(new Date(now))) {
+      return {
+        ...pack,
+        error: `${day} 没有已录入盘面。只有当天会用 qimen-current 自动起盘，不回填历史。`
+      };
+    }
+    const reading = spxReadingFromCurrent(currentQimenChart(now), day);
+    pack = await buildOracleDesk({ date: day, now, loader, refresh, reading });
+    pack.generatedChart = true;
+    pack.chartSource = 'qimen-current';
+    pack.note = `${pack.note || ''} 当天没有手工盘，已用 qimen-current 自动生成并写入。`.trim();
+  }
+  if (pack.empty) return pack;
+  pack.written = await writeOracle(pack);
   return pack;
 }
 

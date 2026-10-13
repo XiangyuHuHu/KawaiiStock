@@ -78,6 +78,7 @@ export function freshnessHtml(pack, market, now) {
   return `<div class="watch-freshness ${data.stale ? 'is-stale' : ''}" role="status"><strong>${data.stale ? '非实时 / 已过期或日期不完整' : '非实时 · 已保存观察快照'}</strong>
     <p>当前观察日 ${escapeHtml(data.target)} · 快照 ${data.observation || '未知'} · 行情最新 ${stamp(data.price)}${data.signal ? ` · 日线信号最新 ${stamp(data.signal)}` : ''}</p>
     ${data.reasons.length ? `<p>${data.reasons.map(escapeHtml).join('；')}。可尝试「手动更新」，日期是否推进取决于来源数据。</p>` : ''}
+    ${pack?.listNote ? `<p>${escapeHtml(pack.listNote)}</p>` : ''}
     <small>文件生成时间：${escapeHtml(generated)}；生成时间不代表行情更新。只读研究，不下单。</small></div>`;
 }
 

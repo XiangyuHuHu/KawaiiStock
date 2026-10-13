@@ -272,6 +272,7 @@ liveTrading: false
 # ${pack.date} 每日观察
 
 > 足迹不是预测。先扫描、再确认、有计划再动。不是下单指令，不进推荐 / 模拟 / 实际操作。
+${pack.listNote ? `> ${pack.listNote}\n` : ''}
 > 策略：${CYCLE_NAME}。大盘 ${pack.regimeLabel || pack.regime}。只做 Wedge Pop / EMA Crossback / Base 'n Break，且 ≥80 分。缺日线写 DATA UNAVAILABLE。
 > 每条后面的胜率是该 Cycle 阶段在「最可能涨/跌」里的次日方向胜率，不是带止损的交易胜率。
 
@@ -375,7 +376,9 @@ export async function buildWatchlist({ date } = {}) {
     regime: cycleBook.regime,
     regimeLabel: cycleBook.regimeLabel,
     scanned: symbols.length,
-    listError: universe.error || null,
+    listError: universe.fallback ? null : (universe.error || null),
+    listNote: universe.note || null,
+    demoFallback: universe.fallback || null,
     counts: {
       confluence: confluence.length,
       setups: setups.length,
@@ -388,7 +391,7 @@ export async function buildWatchlist({ date } = {}) {
     },
     featured,
     boards: { confluence, setups, volume, rs, avoid },
-    note: '足迹不是预测。不是下单。不进推荐/模拟/实际操作。'
+    note: ['足迹不是预测。不是下单。不进推荐/模拟/实际操作。', universe.note].filter(Boolean).join(' ')
   };
 }
 

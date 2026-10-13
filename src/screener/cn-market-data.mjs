@@ -1,9 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { OBSIDIAN_CN_LISTS } from "../paths.js";
 
-const CN_LIST_DIR = process.env.CN_LIST_DIR
-  ?? process.env.OBSIDIAN_CN_LISTS
-  ?? "D:\\Obsidian仓库\\Kawaii的仓库\\投资\\股票\\List\\A股";
+const CN_LIST_DIR = process.env.CN_LIST_DIR || OBSIDIAN_CN_LISTS;
 const responseCache = new Map();
 const stockCache = new Map();
 const fullListCache = new Map();

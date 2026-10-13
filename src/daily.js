@@ -324,16 +324,17 @@ export async function runDailyJob(opts = {}) {
 
   const oracle = { ok: true, qimen: null, us: null, cn: null, error: null };
   try {
-    const { buildOracleDesk, writeOracle } = await import('./oracle/qimen.js');
-    const pack = await buildOracleDesk({ date, refresh: true });
-    if (pack.empty) {
+    const { ensureOracleWrite } = await import('./oracle/qimen.js');
+    const pack = await ensureOracleWrite({ date, refresh: true });
+    if (pack.generatedChart) {
       const { buildCurrentQimen } = await import('./oracle/qimen-current.js');
       const current = await buildCurrentQimen({});
       await mkdir(OBSIDIAN_ORACLE, { recursive: true });
       await writeFile(join(OBSIDIAN_ORACLE, `${date}-current.json`), `${JSON.stringify({ ...current, liveTrading: false }, null, 2)}\n`, 'utf8');
       oracle.qimen = '本时盘已写';
+    } else if (pack.empty) {
+      oracle.qimen = pack.error || '无盘面';
     } else {
-      await writeOracle(pack);
       oracle.qimen = '已写';
     }
   } catch (error) {

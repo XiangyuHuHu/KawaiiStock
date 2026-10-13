@@ -220,6 +220,9 @@ export function assertOrder(order = {}, book = {}, limits = {}, extras = {}) {
   }
   if (qty == null || qty <= 0) return deny('bad-qty', '数量必须大于 0', verdict);
   if (!(notional > 0)) return deny('bad-price', '成交限价必须为正数', verdict);
+  if (!reduce && book.holdingsConfigured === false && String(bookKind) === 'live') {
+    return deny('not-configured', '持仓档案未配置，实盘风控未启用', verdict);
+  }
   if (!reduce && !(num(book.nav) > 0)) return deny('nav-unknown', '账户净值未知或非正数', verdict);
   const referencePaper = !reduce && order.paperReference === true && String(bookKind).startsWith('paper') && (
     (instrument === 'option' && qty === 1) || (instrument === 'equity' && qty > 0)
@@ -240,8 +243,8 @@ export function assertOrder(order = {}, book = {}, limits = {}, extras = {}) {
 
   if (!reduce && !canOpen(mode)) {
     return deny(
-      mode === 'KILL' ? 'kill' : mode === 'PROTECT' ? 'protect' : 'reduce-only',
-      `${mode}：禁止新开仓/加仓。${modeInfo.reason || ''}`.trim(),
+      mode === 'KILL' ? 'kill' : mode === 'PROTECT' ? 'protect' : mode === 'NOT_CONFIGURED' ? 'not-configured' : 'reduce-only',
+      `${mode === 'NOT_CONFIGURED' ? '未配置' : mode}：禁止新开仓/加仓。${modeInfo.reason || ''}`.trim(),
       verdict
     );
   }

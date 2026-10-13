@@ -348,7 +348,7 @@ function renderUsWatch(pack) {
     <p class="watch-foot">${pack.note || ''}</p>`;
   status.textContent = pack.listError
     ? `清单缺失：${pack.listError}`
-    : `${pack.stale ? `今日 ${pack.requestedDate || '尚未扫描'}，先显示 ${pack.date}。` : ''} ${pack.date} ${pack.strategy?.name || 'Cycle'} · 大盘 ${pack.regimeLabel || pack.regime} · 扫描 ${pack.scanned}。`.trim();
+    : `${pack.listNote ? `${pack.listNote} ` : ''}${pack.stale ? `今日 ${pack.requestedDate || '尚未扫描'}，先显示 ${pack.date}。` : ''} ${pack.date} ${pack.strategy?.name || 'Cycle'} · 大盘 ${pack.regimeLabel || pack.regime} · 扫描 ${pack.scanned}。`.trim();
   bindWatchCards(grid);
 }
 

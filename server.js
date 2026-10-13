@@ -6,7 +6,7 @@ import { loadForward, refreshForward } from './src/options/forward.js';
 import http from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
-import { PUBLIC_DIR, REPORTS_DIR, lastSessionStamp } from './src/paths.js';
+import { PUBLIC_DIR, REPORTS_DIR, lastSessionStamp, logMissingPaths } from './src/paths.js';
 import { buildDesk, buildTape, buildUniversePage } from './src/desk.js';
 import { accountById, applyScan, loadAccounts, loadConfig, loadHoldings, loadStrategy, saveHoldings } from './src/holdings.js';
 import { loadDailyReports, loadRecFiles } from './src/reports.js';
@@ -452,14 +452,13 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     if (req.method === 'POST' && url.pathname === '/api/oracle/write') {
-      const { buildOracleDesk, writeOracle } = await import('./src/oracle/qimen.js');
+      const { ensureOracleWrite } = await import('./src/oracle/qimen.js');
       const body = await readJsonBody(req).catch(() => ({}));
-      const pack = await buildOracleDesk({ date: body.date || url.searchParams.get('date') || undefined });
+      const pack = await ensureOracleWrite({ date: body.date || url.searchParams.get('date') || undefined });
       if (pack.empty) {
         sendJson(res, 400, pack);
         return;
       }
-      pack.written = await writeOracle(pack);
       sendJson(res, 200, pack);
       return;
     }
@@ -733,6 +732,7 @@ server.requestTimeout = 180000;
 server.timeout = 180000;
 server.listen(PORT, HOST, () => {
   console.log(`Kawaii Research Desk  http://${HOST}:${PORT}`);
+  logMissingPaths().catch((error) => console.error(`路径检查失败：${error.message}`));
   initializeCollector().catch(() => console.error('期权只读采集器初始化失败'));
 });
 

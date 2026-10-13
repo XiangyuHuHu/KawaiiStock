@@ -115,6 +115,7 @@ function parseHoldingsMarkdown(raw, account) {
     equity: equityMatch ? parseMoney(equityMatch[1]) : null,
     positions,
     missing: positions.length === 0,
+    configured: true,
     note: account.holdingsKind === 'strategy-not-book'
       ? '这份文件是策略副本，不是持仓表。ChatGPT Agentic 没有独立持仓档案。'
       : '从 ChatGPT 对照持仓 Markdown 解析。只读。'
@@ -132,6 +133,7 @@ export async function loadHoldings(account) {
       costTotal: null,
       positions: [],
       missing: true,
+      configured: false,
       note: 'ChatGPT 的 `03_5000美元_Agentic自动交易策略.md` 是策略手册副本，没有持仓表。'
     };
   }
@@ -154,6 +156,7 @@ export async function loadHoldings(account) {
         costTotal: null,
         positions: [],
         missing: true,
+        configured: false,
         note: `未找到 ${account.holdingsFile}`
       };
     }
@@ -169,19 +172,21 @@ export async function loadHoldings(account) {
       cash: null,
       costTotal: null,
       positions: [],
-      missing: true
+      missing: true,
+      configured: false
     };
   }
   return annotateHoldings(account, data);
 }
 
 export function holdingsFreshness(book, date = todayStamp()) {
-  if (!book || book.missing) return { fresh: false, stale: true };
-  if (book.pricesOk === true && asOfStamp(book.priceAsOf) === date) return { fresh: true, stale: false };
-  if (book.scanStatus === 'unavailable' || book.stale === true) return { fresh: false, stale: true };
+  if (!book || book.configured === false) return { fresh: false, stale: false, configured: false };
+  if (book.missing) return { fresh: false, stale: true, configured: true };
+  if (book.pricesOk === true && asOfStamp(book.priceAsOf) === date) return { fresh: true, stale: false, configured: true };
+  if (book.scanStatus === 'unavailable' || book.stale === true) return { fresh: false, stale: true, configured: true };
   const day = asOfStamp(book.dataAsOf || book.asOf);
-  if (!day) return { fresh: false, stale: true };
-  return { fresh: day === date, stale: day !== date };
+  if (!day) return { fresh: false, stale: true, configured: true };
+  return { fresh: day === date, stale: day !== date, configured: true };
 }
 
 const QUOTE_SYMBOL = /^[A-Z][A-Z0-9.-]{0,12}$/;
@@ -301,6 +306,7 @@ function annotateHoldings(account, data) {
   return {
     ...data,
     missing: false,
+    configured: true,
     stale: freshness.stale,
     live: account.source === 'robinhood' ? freshness.fresh && data.scanStatus !== 'unavailable' : false
   };

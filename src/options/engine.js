@@ -10,6 +10,7 @@ import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { OBSIDIAN_OPTIONS, todayStamp } from '../paths.js';
 import { loadAccounts, loadHoldings } from '../holdings.js';
+import { loadUniverse } from '../universe.js';
 import { loadHistoricals } from '../historicals.js';
 import { freshnessFromContext } from '../risk/freshness.js';
 import { getStrategy, listStrategies } from './strategies.js';
@@ -19,6 +20,7 @@ import { attachOptionScore, updateOptionScore } from './score.js';
 export { listStrategies };
 
 const SCAN_CAP = 16;
+export const WATCHLIST_FALLBACK_N = 16;
 const BUY_CAP = 3;
 const scans = new Map();
 export function rememberScan(pack) {
@@ -50,6 +52,13 @@ async function readJson(path) {
   }
 }
 
+function tagPool(rows, note, source) {
+  const out = rows.slice();
+  out.poolNote = note || null;
+  out.poolSource = source;
+  return out;
+}
+
 export async function optionUniverse({ deskId = 'grok', full = false } = {}) {
   const config = await loadAccounts(deskId);
   const seen = new Set();
@@ -76,7 +85,20 @@ export async function optionUniverse({ deskId = 'grok', full = false } = {}) {
     seen.add(key);
     rows.push({ symbol: key, name: key, from: 'tape', accountId: 'watch' });
   }
-  return full ? rows : rows.slice(0, SCAN_CAP);
+  if (!rows.length) {
+    const universe = await loadUniverse();
+    for (const row of (universe.symbols || []).slice(0, WATCHLIST_FALLBACK_N)) {
+      const symbol = String(row.symbol || '').toUpperCase();
+      if (!isEquitySymbol(symbol) || seen.has(symbol)) continue;
+      seen.add(symbol);
+      rows.push({ symbol, name: symbol, from: 'watchlist-fallback', accountId: 'watch' });
+    }
+    const why = rows.length
+      ? `研究持仓和关注带为空，已回退到观察清单前 ${rows.length} 只。${universe.note || ''}`.trim()
+      : '研究持仓、关注带和观察清单都是空的。';
+    return tagPool(full ? rows : rows.slice(0, SCAN_CAP), why, 'watchlist-fallback');
+  }
+  return tagPool(full ? rows : rows.slice(0, SCAN_CAP), null, 'holdings-tape');
 }
 
 async function loadContext(row, asOf) {
@@ -207,7 +229,9 @@ export async function buildOptionsDesk({ date, strategyId = 'cov', deskId = 'gro
     },
     strategies: listStrategies(),
     vix: vix.ok ? vix.last : null,
-    note: '草稿，不是下单指令。不写进推荐操作 / 模拟操作 / 实际操作。主账户不做期权。最多 0–3 个买入候选；Yahoo/Nasdaq 若缺每腿 Bid/Ask 时间则不能进买入。没有优势就 NO TRADE。',
+    poolNote: fullUniverse.poolNote || null,
+    poolSource: fullUniverse.poolSource || null,
+    note: ['草稿，不是下单指令。不写进推荐操作 / 模拟操作 / 实际操作。主账户不做期权。最多 0–3 个买入候选；Yahoo/Nasdaq 若缺每腿 Bid/Ask 时间则不能进买入。没有优势就 NO TRADE。', fullUniverse.poolNote].filter(Boolean).join(' '),
     scanned: universe.length,
     ideas,
     buys,

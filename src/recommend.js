@@ -477,6 +477,31 @@ function withPaperStop(accountId, row) {
   return { ...row, failPrice: Number((Number(row.last) * (1 - pct)).toFixed(2)) };
 }
 
+export const PAPER_VIEW_NOTE = '纸上实验独立视图：最多 12 只，并补纸上止损。与「新机会」重叠的代码是同一排序的另一视角，不是第二份推荐。';
+
+export function asPaperView(opportunities, rows) {
+  const seen = new Set((opportunities || []).map((row) => row.symbol).filter(Boolean));
+  return (rows || []).map((row) => ({
+    ...row,
+    view: 'paper',
+    viewLabel: '纸上实验候选',
+    overlapsOpportunities: Boolean(row.symbol && seen.has(row.symbol))
+  }));
+}
+
+function scanLists(universe) {
+  return {
+    lists: universe.lists.map((row) => ({ file: row.file, title: row.title, bucket: row.bucket, count: row.count })),
+    listSummary: universe.fallback
+      ? (universe.note || '观察清单缺失，已回退到内置 public-demo 池')
+      : (universe.lists.length ? universe.lists.map((row) => `${row.title} ${row.count}`).join(' · ') : '清单缺失'),
+    symbolCount: universe.symbols.length,
+    error: universe.error || null,
+    fallback: universe.fallback || null,
+    note: universe.note || null
+  };
+}
+
 function fmtPx(value) {
   if (value == null || Number.isNaN(Number(value))) return '—';
   return Number(value).toFixed(2);
@@ -538,6 +563,19 @@ function renderRecMarkdown(date, payload) {
     const opLines = (book.opportunities || []).map((row) => (
       `| ${row.symbol} | ${row.action} | ${row.source || ''} | ${strategyCell(row)} | ${row.instrument || 'stock'} | ${fmtPx(row.failPrice)} | ${row.failBy || '—'} | ${row.maxLoss || '—'} | ${row.title} | ${row.detail} |`
     )).join('\n');
+    const paperLines = (book.paperCandidates || []).map((row) => (
+      `| ${row.symbol} | ${row.action} | ${row.overlapsOpportunities ? '与新机会重叠' : '仅纸上视图'} | ${strategyCell(row)} | ${fmtPx(row.failPrice)} | ${row.title} |`
+    )).join('\n');
+    const paperSection = Array.isArray(book.paperCandidates) ? `
+
+### 纸上实验候选（独立视图）
+
+${book.paperViewNote || payload.paperViewNote || PAPER_VIEW_NOTE}
+
+| 代码 | 动作 | 视图 | 策略 | 纸上止损 | 结论 |
+| --- | --- | --- | --- | ---: | --- |
+${paperLines || '| — |  |  |  |  | 本账户没有纸上实验候选。 |'}
+` : '';
     const top = book.priorities.map((item, i) => `${i + 1}. **${item.action} ${item.symbol || ''}** — ${item.title}${item.strategyLabel ? `（${item.strategyLabel}）` : ''}`).join('\n') || '今日无必须执行项。';
     return `## ${book.label}
 
@@ -561,7 +599,7 @@ ${lines || '| — | WAIT |  |  |  |  | 空仓 | 档案为空则保持空，不�
 | 代码 | 动作 | 来源 | 策略 | 工具 | 失效价 | 时间失效 | 最大亏损 | 结论 | 理由 |
 | --- | --- | --- | --- | --- | ---: | --- | --- | --- | --- |
 ${opLines || '| — | WAIT |  |  |  |  |  |  | 无合格新机会 | 没有符合本账户职责的候选，持有现金。 |'}
-`;
+${paperSection}`;
   }).join('\n');
 
   const advisor = payload.advisor === 'chatgpt' ? 'chatgpt' : 'grok';
@@ -661,8 +699,11 @@ async function buildGrokRecommendations() {
       }, { ok: false, id: 'cycle-of-price-action', name: 'Cycle of Price Action', stage: 'unknown', stageLabel: '期权不适用', score: null, note: '期权不套用股票价格周期' }));
     }
     const opportunities = pickOpportunities(account.id, universe, quotes, held, navHint, undefined, cycles);
-    const paperCandidates = pickOpportunities(account.id, universe, quotes, held, navHint, 12, cycles)
-      .map((row) => withPaperStop(account.id, row));
+    const paperCandidates = asPaperView(
+      opportunities,
+      pickOpportunities(account.id, universe, quotes, held, navHint, 12, cycles)
+        .map((row) => withPaperStop(account.id, row))
+    );
     const priorities = [
       ...recommendations.filter((row) => row.kind === 'working-order' || ['SELL', 'EXIT', 'TRIM', 'ADD', 'REVIEW', 'BUY'].includes(row.action)),
       ...opportunities.filter((row) => ['BUY', 'SELL', 'EXIT'].includes(row.action)).slice(0, account.id === 'agentic' && !recommendations.length ? 3 : 1)
@@ -693,7 +734,8 @@ async function buildGrokRecommendations() {
       priorities,
       recommendations,
       opportunities,
-      paperCandidates
+      paperCandidates,
+      paperViewNote: PAPER_VIEW_NOTE
     };
   });
 
@@ -703,11 +745,9 @@ async function buildGrokRecommendations() {
     generatedAt: new Date().toISOString(),
     liveTrading: false,
     paperAuto: true,
+    paperViewNote: PAPER_VIEW_NOTE,
     scan: {
-      lists: universe.lists.map((row) => ({ file: row.file, title: row.title, bucket: row.bucket, count: row.count })),
-      listSummary: universe.lists.length ? universe.lists.map((row) => `${row.title} ${row.count}`).join(' · ') : '清单缺失',
-      symbolCount: universe.symbols.length,
-      error: universe.error,
+      ...scanLists(universe),
       cycle: {
         id: cycleBook.id,
         name: cycleBook.name,
@@ -912,10 +952,7 @@ async function buildChatgptRecommendations({ force = false } = {}) {
     generatedAt: new Date().toISOString(),
     liveTrading: false,
     scan: {
-      lists: universe.lists.map((row) => ({ file: row.file, title: row.title, bucket: row.bucket, count: row.count })),
-      listSummary: universe.lists.length ? universe.lists.map((row) => `${row.title} ${row.count}`).join(' · ') : '清单缺失',
-      symbolCount: universe.symbols.length,
-      error: universe.error,
+      ...scanLists(universe),
       cycle: {
         id: cycleBook.id,
         name: cycleBook.name,

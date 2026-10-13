@@ -1,3 +1,4 @@
+import { access } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -9,16 +10,35 @@ export const DATA_DIR = process.env.KAWAII_DATA_DIR || join(ROOT, 'data');
 export const REPORTS_DIR = process.env.KAWAII_REPORTS_DIR || join(ROOT, 'reports');
 export const CONFIG_PATH = join(DATA_DIR, 'accounts.json');
 
-export const OBSIDIAN_VAULT = process.env.OBSIDIAN_VAULT
-  || 'D:\\Obsidian仓库\\Kawaii的仓库\\投资\\股票\\Grok策略+记录';
-export const OBSIDIAN_CHATGPT = process.env.OBSIDIAN_CHATGPT
-  || 'D:\\Obsidian仓库\\Kawaii的仓库\\投资\\股票\\Chatgpt策略+记录';
-export const OBSIDIAN_LISTS = process.env.OBSIDIAN_LISTS
-  || 'D:\\Obsidian仓库\\Kawaii的仓库\\投资\\股票\\List\\美股\\KawaiiList';
-export const OBSIDIAN_CN_LISTS = process.env.OBSIDIAN_CN_LISTS
-  || 'D:\\Obsidian仓库\\Kawaii的仓库\\投资\\股票\\List\\A股';
-export const OBSIDIAN_HOLDINGS = process.env.OBSIDIAN_HOLDINGS
-  || 'D:\\Obsidian仓库\\Kawaii的仓库\\投资\\股票\\持仓';
+export const OBSIDIAN_VAULT = process.env.OBSIDIAN_VAULT || join(ROOT, 'vault', 'grok');
+export const OBSIDIAN_CHATGPT = process.env.OBSIDIAN_CHATGPT || join(ROOT, 'vault', 'chatgpt');
+export const OBSIDIAN_LISTS = process.env.OBSIDIAN_LISTS || join(ROOT, 'vault', 'lists', 'us');
+export const OBSIDIAN_CN_LISTS = process.env.OBSIDIAN_CN_LISTS || join(ROOT, 'vault', 'lists', 'cn');
+export const OBSIDIAN_HOLDINGS = process.env.OBSIDIAN_HOLDINGS || join(ROOT, 'vault', 'holdings');
+
+export const VAULT_PATHS = [
+  ['OBSIDIAN_VAULT', OBSIDIAN_VAULT],
+  ['OBSIDIAN_CHATGPT', OBSIDIAN_CHATGPT],
+  ['OBSIDIAN_LISTS', OBSIDIAN_LISTS],
+  ['OBSIDIAN_CN_LISTS', OBSIDIAN_CN_LISTS],
+  ['OBSIDIAN_HOLDINGS', OBSIDIAN_HOLDINGS]
+];
+
+/** 启动时记下还不存在的资料目录。缺目录不阻止研究台起来。 */
+export async function logMissingPaths(logger = console) {
+  const rows = [];
+  for (const [name, dir] of VAULT_PATHS) {
+    let missing = false;
+    try {
+      await access(dir);
+    } catch {
+      missing = true;
+      logger.warn?.(`[kawaii] 路径不存在 ${name}=${dir}`);
+    }
+    rows.push({ name, path: dir, missing });
+  }
+  return rows;
+}
 
 /** Agentic 叙事日志，不是买卖清单。 */
 export const OBSIDIAN_DAILY = process.env.OBSIDIAN_DAILY || join(OBSIDIAN_VAULT, '日报');

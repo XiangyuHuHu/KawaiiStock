@@ -1,5 +1,6 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { demoResearchUniverse } from './demo-pool.js';
 import { OBSIDIAN_LISTS } from './paths.js';
 
 const TICKER_RE = /\*\*([A-Z][A-Z0-9.-]{0,9})\*\*/g;
@@ -28,7 +29,7 @@ export async function loadUniverse() {
   try {
     files = (await readdir(OBSIDIAN_LISTS)).filter((name) => name.endsWith('.md') && !name.startsWith('00 '));
   } catch {
-    return { lists: [], symbols: [], bySymbol: {}, error: 'lists-missing' };
+    return demoResearchUniverse();
   }
 
   const lists = [];
@@ -57,5 +58,6 @@ export async function loadUniverse() {
     return ra - rb || a.symbol.localeCompare(b.symbol);
   });
 
-  return { lists, symbols, bySymbol, error: null };
+  if (!symbols.length) return demoResearchUniverse();
+  return { lists, symbols, bySymbol, error: null, fallback: null, note: null };
 }

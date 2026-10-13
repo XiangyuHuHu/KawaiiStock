@@ -1,0 +1,26 @@
+# KawaiiStock 本地研究台示例。复制为 docker-compose.yml 后再改目录。
+# docker-compose.yml 不提交。本服务不下实盘单，也不要挂券商交易密钥。
+services:
+  kawaii:
+    build: .
+    image: kawaii-stock:local
+    ports:
+      - "127.0.0.1:3479:3479"
+    environment:
+      NODE_ENV: production
+      HOST: "0.0.0.0"
+      PORT: "3479"
+      OPTIONS_FORWARD_ENABLED: "0"
+      MARKET_DATA_PROVIDER: ""
+      TWELVE_DATA_API_KEY: ""
+      TRADIER_TOKEN: ""
+      TRADIER_SANDBOX: "0"
+    volumes:
+      - ./vault:/app/vault
+      - ./data:/app/data
+      - ./reports:/app/reports
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
