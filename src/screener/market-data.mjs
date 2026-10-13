@@ -2,6 +2,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { PUBLIC_DEMO_UNIVERSE, demoWatchlist } from "../demo-pool.js";
 import { OBSIDIAN_LISTS } from "../paths.js";
+import { rememberTape } from "../tape.js";
+import { adjustCyclicalValuation, anomalyFromMargin, fundamentalsStale } from "../valuation-guards.js";
 import { getChinaPayload } from "./cn-market-data.mjs";
 
 const FALLBACK_UNIVERSE = PUBLIC_DEMO_UNIVERSE;
@@ -355,6 +357,7 @@ async function fetchQuote(symbol) {
     thirtyDayHigh: null,
     marketCap: parseMarketNumber(summaryData.MarketCap?.value),
     sector: summaryData.Sector?.value && summaryData.Sector.value !== "N/A" ? summaryData.Sector.value : null,
+    earningsDate: summaryData.EarningsDate?.value || summaryData.NextEarningsDate?.value || forecast?.data?.earningsDate || forecast?.data?.nextEarningsDate || null,
     forwardEps: safeNumber(currentYearForecast?.consensusEPSForecast),
     forwardEpsHigh: safeNumber(currentYearForecast?.highEPSForecast),
     forwardEpsLow: safeNumber(currentYearForecast?.lowEPSForecast),
@@ -635,16 +638,37 @@ async function buildValuation(meta, quote, companyFacts) {
     netDebtPerShare: netDebtPerShare ?? 0,
   }) : null;
 
+  const cyclical = adjustCyclicalValuation({
+    symbol: meta.symbol,
+    sector: quote.sector ?? meta.sector,
+    company: companyFacts.entityName,
+    ttmEps: eps,
+    forwardEps: quote.forwardEps,
+    earningsMultiple,
+    dcfValue,
+    fairValue,
+  });
+  if (cyclical.kind || cyclical.dcfWeight) {
+    fairValue = cyclical.fairValue;
+    earningsMultiple = cyclical.earningsMultiple;
+  }
   const marginOfSafety = fairValue && price ? (fairValue / price - 1) * 100 : null;
-  const valuationScore = marginOfSafety == null ? 50 : clamp(52 + marginOfSafety * 0.85, 0, 100);
-  const opportunityScore = Math.round(clamp(qualityScore * 0.64 + valuationScore * 0.36, 0, 100));
+  const anomaly = anomalyFromMargin(marginOfSafety);
+  const valuationScore = anomaly.modelAnomaly || marginOfSafety == null ? null : clamp(52 + marginOfSafety * 0.85, 0, 100);
+  const opportunityScore = anomaly.modelAnomaly
+    ? null
+    : Math.round(clamp(qualityScore * 0.64 + (valuationScore ?? 50) * 0.36, 0, 100));
+  const priceConflict = price > 0 ? rememberTape(meta.symbol, { last: price, source: quote.source || "screener-quote" }) : null;
   const dailyChange = price && quote.previousClose ? (price / quote.previousClose - 1) * 100 : null;
   const drawdown30d = price && quote.thirtyDayHigh ? (price / quote.thirtyDayHigh - 1) * 100 : null;
   const marketCap = quote.marketCap ?? (shares && price ? shares * price : null);
 
   let status = "Model unavailable";
   let modelStatusReason = null;
-  if (marginOfSafety != null) {
+  if (anomaly.modelAnomaly) {
+    status = anomaly.status;
+    modelStatusReason = anomaly.modelStatusReason;
+  } else if (marginOfSafety != null) {
     if (marginOfSafety >= 25) status = "Strongly Undervalued";
     else if (marginOfSafety >= 10) status = "Undervalued";
     else if (marginOfSafety >= -8) status = "Near Fair Value";
@@ -680,6 +704,7 @@ async function buildValuation(meta, quote, companyFacts) {
     .filter(Boolean)
     .sort()
     .at(-1) ?? null;
+  const fundamentalState = fundamentalsStale({ fiscalDate, earningsDate: quote.earningsDate });
 
   const toPeriodMap = (series) => new Map(series.map((point) => [point.end, point.__unit === "shares" ? factValue(point) : toUsd(point)]));
   const historyMaps = {
@@ -742,6 +767,16 @@ async function buildValuation(meta, quote, companyFacts) {
     opportunityScore,
     qualityScore,
     marginOfSafety,
+    modelAnomaly: anomaly.modelAnomaly,
+    cyclicalKind: cyclical.kind,
+    cyclicalNotes: cyclical.notes,
+    fwdToTtm: cyclical.fwdToTtm,
+    dcfWeight: cyclical.dcfWeight,
+    priceConflict,
+    fundamentalsStale: fundamentalState.stale,
+    fundamentalsAgeDays: fundamentalState.ageDays,
+    fundamentalsStaleReasons: fundamentalState.reasons,
+    earningsDate: quote.earningsDate || null,
     status,
     modelStatusReason,
     risk,
@@ -794,7 +829,7 @@ async function buildValuation(meta, quote, companyFacts) {
             ? "成长型 EV/Sales 情景模型"
             : "自由现金流锚点 + 受限 DCF",
       weights: earningsValue
-        ? { earnings: 100, dcf: 0, relative: 0 }
+        ? { earnings: 100 - (cyclical.dcfWeight || 0), dcf: cyclical.dcfWeight || 0, relative: 0 }
         : salesValue
           ? { sales: 100, dcf: 0, relative: 0 }
           : { cashFlow: cashFlowValue ? 65 : 0, dcf: dcfValue && cashFlowValue ? 35 : dcfValue ? 100 : 0 },
@@ -816,7 +851,7 @@ async function buildValuation(meta, quote, companyFacts) {
     marketDate: quote.marketDate,
     quoteSource: quote.source,
     secUrl: `https://data.sec.gov/api/xbrl/companyfacts/CIK${meta.cik}.json`,
-    confidence: earningsValue && cashFlowValue ? "High" : earningsValue || cashFlowValue ? "Medium" : salesValue ? "Low" : "Low",
+    confidence: cyclical.confidence || (anomaly.modelAnomaly ? "Low" : earningsValue && cashFlowValue ? "High" : earningsValue || cashFlowValue ? "Medium" : salesValue ? "Low" : "Low"),
   };
 }
 
@@ -983,6 +1018,10 @@ async function loadMarketData({ watchlistId, page, pageSize, presetId = "all" },
     generatedAt: new Date().toISOString(),
     listNote: activeWatchlist.note || null,
     fallback: activeWatchlist.fallback || null,
+    listSource: activeWatchlist.fallback ? "public-demo" : "vault",
+    listDir: WATCHLIST_DIR,
+    dedupedSymbolCount: new Set(watchlists.flatMap((row) => row.symbols)).size,
+    mentionCount: watchlists.reduce((sum, row) => sum + (row.total || 0), 0),
     watchlists: watchlists.map((watchlist) => ({
       id: watchlist.id,
       title: watchlist.title,
@@ -1019,6 +1058,10 @@ async function loadMarketData({ watchlistId, page, pageSize, presetId = "all" },
     },
     marketDataAsOf: marketDates.at(-1) ?? null,
     fundamentalsAsOf: fiscalDates.at(-1) ?? null,
+    fundamentalsStale: validStocks.some((stock) => stock.fundamentalsStale),
+    staleNote: validStocks.some((stock) => stock.fundamentalsStale)
+      ? "财务截止日超过 30 天，或已经过了财报日但仍在用更早的报表。"
+      : null,
     partial: errors.length > 0,
     errors,
     sources: [

@@ -52,6 +52,20 @@ async function readJson(path) {
   }
 }
 
+const PRIORITY = { holdings: 3, 'option-holding': 3, tape: 2, 'watchlist-fallback': 1, watchlist: 1 };
+const LIQUID_UNDERLYINGS = new Set(['SPY', 'QQQ', 'IWM', 'AAPL', 'MSFT', 'NVDA', 'AMZN', 'META', 'GOOGL', 'GOOG', 'AVGO', 'TSLA', 'AMD', 'NFLX', 'JPM', 'BAC', 'XOM', 'CVX', 'MU', 'COIN']);
+
+export function rankOptionPool(rows, liquidity = {}) {
+  const score = (row) => {
+    const liq = liquidity[row.symbol] || {};
+    const flow = Number(liq.optionVolume || 0) + Number(liq.openInterest || 0);
+    const equity = Number(liq.equityVolume || 0);
+    const prior = LIQUID_UNDERLYINGS.has(row.symbol) ? 1e9 : 0;
+    return (PRIORITY[row.from] || 0) * 1e12 + flow * 1e6 + prior + equity;
+  };
+  return [...rows].sort((a, b) => score(b) - score(a) || String(a.symbol).localeCompare(String(b.symbol)));
+}
+
 function tagPool(rows, note, source) {
   const out = rows.slice();
   out.poolNote = note || null;
@@ -87,18 +101,21 @@ export async function optionUniverse({ deskId = 'grok', full = false } = {}) {
   }
   if (!rows.length) {
     const universe = await loadUniverse();
-    for (const row of (universe.symbols || []).slice(0, WATCHLIST_FALLBACK_N)) {
+    for (const row of universe.symbols || []) {
       const symbol = String(row.symbol || '').toUpperCase();
       if (!isEquitySymbol(symbol) || seen.has(symbol)) continue;
       seen.add(symbol);
       rows.push({ symbol, name: symbol, from: 'watchlist-fallback', accountId: 'watch' });
     }
-    const why = rows.length
-      ? `研究持仓和关注带为空，已回退到观察清单前 ${rows.length} 只。${universe.note || ''}`.trim()
+    const ranked = rankOptionPool(rows);
+    const capped = full ? ranked : ranked.slice(0, SCAN_CAP);
+    const why = capped.length
+      ? `研究持仓和关注带为空，已按持仓优先、期权成交量/持仓量排序，取前 ${Math.min(capped.length, SCAN_CAP)} 只。${universe.note || ''}`.trim()
       : '研究持仓、关注带和观察清单都是空的。';
-    return tagPool(full ? rows : rows.slice(0, SCAN_CAP), why, 'watchlist-fallback');
+    return tagPool(capped, why, 'watchlist-fallback');
   }
-  return tagPool(full ? rows : rows.slice(0, SCAN_CAP), null, 'holdings-tape');
+  const ranked = rankOptionPool(rows);
+  return tagPool(full ? ranked : ranked.slice(0, SCAN_CAP), null, 'holdings-tape');
 }
 
 async function loadContext(row, asOf) {
@@ -162,12 +179,43 @@ function isBuy(action) {
 // Robinhood 期权佣金为 0，只剩监管/交易所杂费，按每张每次约 $0.03 估。
 export const DEFAULT_FEE_PER_CONTRACT = 0.03;
 
+async function sampleOptionLiquidity(symbols) {
+  const unique = [...new Set(symbols.map((symbol) => String(symbol || '').toUpperCase()).filter(Boolean))];
+  if (unique.length <= SCAN_CAP) return {};
+  const scores = {};
+  const deadline = Date.now() + 12000;
+  await mapPool(unique.slice(0, 48), async (symbol) => {
+    if (Date.now() > deadline) return;
+    try {
+      const response = await fetch(`https://query1.finance.yahoo.com/v7/finance/options/${encodeURIComponent(symbol)}`, {
+        headers: { 'User-Agent': 'Mozilla/5.0 KawaiiResearch' },
+        signal: AbortSignal.timeout(3000)
+      });
+      if (!response.ok) return;
+      const json = await response.json();
+      const contracts = json?.optionChain?.result?.[0]?.options?.[0];
+      const legs = [...(contracts?.calls || []), ...(contracts?.puts || [])];
+      scores[symbol] = {
+        optionVolume: legs.reduce((sum, row) => sum + (Number(row.volume) || 0), 0),
+        openInterest: legs.reduce((sum, row) => sum + (Number(row.openInterest) || 0), 0)
+      };
+    } catch {
+      scores[symbol] = { optionVolume: 0, openInterest: 0 };
+    }
+  }, { concurrency: 6 });
+  return scores;
+}
+
 export async function buildOptionsDesk({ date, strategyId = 'cov', deskId = 'grok', feePerContract = DEFAULT_FEE_PER_CONTRACT, refresh = false } = {}) {
   if (refresh) clearMarketCache();
   const day = date || todayStamp();
   const strategy = getStrategy(strategyId);
   const fullUniverse = await optionUniverse({ deskId, full: true });
-  const universe = fullUniverse.slice(0, SCAN_CAP);
+  const liquidity = await sampleOptionLiquidity(fullUniverse.map((row) => row.symbol));
+  const rankedUniverse = rankOptionPool(fullUniverse, liquidity);
+  const universe = rankedUniverse.slice(0, SCAN_CAP);
+  universe.poolNote = fullUniverse.poolNote;
+  universe.poolSource = fullUniverse.poolSource;
   const vix = await loadVix();
   const contexts = await mapPool(universe, (row) => loadContext(row, day), { concurrency: 3 });
   const ideas = [];

@@ -183,6 +183,8 @@ function scoreStages(ctx) {
   if (downtrend && lastPx < ema20 && ema20 < ema50) scores[STAGES.DROP.id] += 25;
   if (ret20 != null && ret20 <= -10 && lastPx < ema50) scores[STAGES.DROP.id] += 15;
   if (ctx.low5 <= (ctx.low20 || ctx.low5) * 1.002 && downtrend) scores[STAGES.DROP.id] += 10;
+  // A failed poke while price is still above EMA50 is not a wedge drop.
+  if (lastPx > ema50) scores[STAGES.DROP.id] = 0;
 
   if (!uptrend && (lastPx < ema50 || (ema200 && lastPx < ema200))) {
     if (ret20 != null && ret20 <= -12) scores[STAGES.REVERSAL.id] += 20;
@@ -307,10 +309,47 @@ function stopFor(stage, { lastPx, atr, ema20, wedge, base, low5 }) {
   return roundPx(lastPx * 0.95, lastPx);
 }
 
+export function gateCrossbackBreak(result, bars) {
+  if (!result || result.stage !== STAGES.CROSSBACK.id) return result;
+  const clean = (bars || []).filter((bar) => bar && bar.close > 0);
+  const lastPx = Number(result.last);
+  const prev = clean.length >= 2 ? clean[clean.length - 2].close : null;
+  const atr = Number(result.atr);
+  const ema10 = Number(result.ema10);
+  const drop = prev > 0 && lastPx > 0 ? prev - lastPx : 0;
+  const broke = (atr > 0 && drop > 1.5 * atr) || (ema10 > 0 && lastPx < ema10);
+  if (!broke) return result;
+  return {
+    ...result,
+    allowNewLong: false,
+    watch: false,
+    tradeable: false,
+    sizeR: 0,
+    pendingConfirm: true,
+    pendingConfirmLabel: '今日跌破，待确认',
+    note: `${result.note || result.stageLabel || 'EMA Crossback'} · 今日跌破，待确认`
+  };
+}
+
 export function classifyBars(bars, options = {}) {
-  if (options.version === 'v1') return classifyBarsV1(bars, options);
+  const clean = bars || [];
+  if (options.version === 'v1') return gateCrossbackBreak(classifyBarsV1(clean, options), clean);
   // V2 is a completed daily-bar signal; a live quote must not rewrite its indicators.
-  return confirmCycle(bars || [], classifyBarsV1(bars, { ...options, lastOverride: undefined }));
+  const confirmed = confirmCycle(clean, classifyBarsV1(clean, { ...options, lastOverride: undefined }));
+  return gateCrossbackBreak(confirmed, clean);
+}
+
+export function primaryBlockReason(cycle) {
+  if (!cycle) return '没有周期扫描';
+  if (cycle.pendingConfirm) return cycle.pendingConfirmLabel || '今日跌破，待确认';
+  const reasons = cycle.confirmation?.reasons;
+  if (cycle.confirmation && cycle.confirmation.confirmed === false && reasons?.length) return reasons[0];
+  if (cycle.ok && cycle.allowNewLong !== true) {
+    if (!TRADEABLE.has(cycle.stage)) return `${cycle.stageLabel || cycle.stage} 不是可开形态`;
+    if (!(Number(cycle.score) >= 80)) return `分数 ${cycle.score ?? '—'} 低于 80`;
+    return '收盘确认未通过';
+  }
+  return null;
 }
 
 export function classifyBarsV1(bars, { qqqBars = [], meta = {}, lastOverride } = {}) {

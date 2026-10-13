@@ -90,7 +90,9 @@ function markBook(book, quotes = {}) {
   book.equity = round2(Number(book.cash || 0) + market);
   book.positionCount = book.positions.length;
   book.pnl = round2(book.equity - Number(book.startingNav || 0));
-  book.pnlPct = book.startingNav ? round2((book.pnl / book.startingNav) * 100) : 0;
+  const configured = Number(book.startingNav) > 0;
+  book.pnlPct = configured ? round2((book.pnl / book.startingNav) * 100) : null;
+  book.returnStatus = configured ? 'ok' : 'not-configured';
   return book;
 }
 
@@ -123,15 +125,16 @@ function actionRank(action) {
 
 function startingCash(accountId, holdings, positions, capital) {
   if (holdings.cash != null && Number.isFinite(Number(holdings.cash))) return Number(holdings.cash);
-  if (!positions.length) return capital[accountId] ?? 0;
-  return 0;
+  if (!positions.length) return capital[accountId] == null ? null : capital[accountId];
+  return capital[accountId] == null ? null : 0;
 }
 
 function seedAccount(account, holdings, capital) {
   const positions = holdings.missing && account.holdingsKind === 'strategy-not-book'
     ? []
     : clonePositions(holdings.positions);
-  const cash = round2(startingCash(account.id, holdings, positions, capital));
+  const rawCash = startingCash(account.id, holdings, positions, capital);
+  const cash = rawCash == null ? null : round2(rawCash);
   const costBasis = round2(positions.reduce((sum, row) => sum + (row.avgCost * row.qty), 0));
   const book = {
     id: account.id,
@@ -143,14 +146,21 @@ function seedAccount(account, holdings, capital) {
     costBasis
   };
   book.startingCash = cash;
-  book.startingNav = round2(cash + positions.reduce((sum, row) => sum + row.marketValue, 0));
+  book.startingCapital = capital[account.id] ?? null;
+  const seededNav = cash == null && !positions.length
+    ? null
+    : round2(Number(cash || 0) + positions.reduce((sum, row) => sum + row.marketValue, 0));
+  book.startingNav = seededNav;
   if (!positions.length && (capital[account.id] != null) && book.startingNav === 0) {
     book.cash = round2(capital[account.id]);
     book.startingCash = book.cash;
     book.startingNav = book.cash;
   }
+  const configuredNav = book.startingNav;
   markBook(book);
-  book.startingNav = book.equity;
+  book.startingNav = configuredNav == null ? null : book.equity;
+  book.returnStatus = book.startingNav > 0 ? 'ok' : 'not-configured';
+  book.pnlPct = book.startingNav > 0 ? book.pnlPct : null;
   return book;
 }
 
@@ -623,28 +633,44 @@ function fillsOn(ledger, date, accountId = 'all') {
   return fills.filter((row) => row.accountId === accountId).length;
 }
 
+export function accountReturn(book, capital) {
+  const start = Number(book?.startingNav);
+  const configured = start > 0 || Number(capital) > 0;
+  if (!configured) return { pnlPct: null, returnStatus: 'not-configured' };
+  return {
+    pnlPct: start > 0 ? round2((Number(book?.pnl) || 0) / start * 100) : null,
+    returnStatus: 'ok'
+  };
+}
+
 function summarizeLedger(ledger) {
   const accounts = ACCOUNT_IDS.map((id) => {
     const book = ledger.accounts[id];
+    const ret = accountReturn(book, ledger.startingCapital?.[id] ?? book?.startingCapital);
     return {
       id,
       label: book?.label || id,
       cash: book?.cash ?? 0,
       equity: book?.equity ?? 0,
-      startingNav: book?.startingNav ?? 0,
+      startingNav: book?.startingNav ?? null,
       pnl: book?.pnl ?? 0,
-      pnlPct: book?.pnlPct ?? 0,
+      pnlPct: ret.pnlPct,
+      returnStatus: ret.returnStatus,
       positionCount: book?.positionCount ?? 0
     };
   });
   const equity = round2(accounts.reduce((sum, row) => sum + row.equity, 0));
-  const startingNav = round2(accounts.reduce((sum, row) => sum + row.startingNav, 0));
-  const pnl = round2(equity - startingNav);
+  const known = accounts.filter((row) => row.returnStatus === 'ok');
+  const startingNav = known.length
+    ? round2(known.reduce((sum, row) => sum + Number(row.startingNav || 0), 0))
+    : null;
+  const pnl = known.length === accounts.length && startingNav != null ? round2(equity - startingNav) : null;
   return {
     equity,
     startingNav,
     pnl,
-    pnlPct: startingNav ? round2((pnl / startingNav) * 100) : 0,
+    pnlPct: pnl != null && startingNav ? round2(pnl / startingNav * 100) : null,
+    returnStatus: known.length === accounts.length ? 'ok' : 'not-configured',
     cash: round2(accounts.reduce((sum, row) => sum + row.cash, 0)),
     positionCount: accounts.reduce((sum, row) => sum + row.positionCount, 0),
     accounts

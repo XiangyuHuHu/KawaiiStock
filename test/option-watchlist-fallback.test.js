@@ -36,10 +36,12 @@ const { optionUniverse, WATCHLIST_FALLBACK_N } = await import('../src/options/en
 test('watchlist fallback stops once a research holding exists', async () => {
   const pool = await optionUniverse({ full: true });
   assert.equal(pool.poolSource, 'watchlist-fallback');
-  assert.match(pool.poolNote, /观察清单前 16 只/);
+  assert.match(pool.poolNote, /期权成交量\/持仓量排序/);
   assert.doesNotMatch(pool.poolNote, /public-demo/);
-  assert.equal(pool.length, WATCHLIST_FALLBACK_N);
-  assert.deepEqual(pool.map((row) => row.symbol), symbols.slice(0, WATCHLIST_FALLBACK_N));
+  assert.equal(pool.length, symbols.length);
+  const capped = await optionUniverse();
+  assert.equal(capped.length, WATCHLIST_FALLBACK_N);
+  assert.deepEqual(capped.map((row) => row.symbol), symbols.slice(0, WATCHLIST_FALLBACK_N));
   assert.equal(pool.every((row) => row.from === 'watchlist-fallback'), true);
 
   await writeFile(join(process.env.OBSIDIAN_HOLDINGS, 'tactical-holdings.json'), JSON.stringify({

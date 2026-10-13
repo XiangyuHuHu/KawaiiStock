@@ -60,8 +60,16 @@ function thesis(row, side) {
   if (row.turnover != null) bits.push(`换手 ${row.turnover.toFixed(1)}%`);
   if (row.pe != null && row.pe > 0) bits.push(`PE ${row.pe.toFixed(1)}`);
   if (row.lists?.length) bits.push(row.lists.slice(0, 2).join(' / '));
-  const tip = side === 'up' ? '当日相对 list 最强，不是目标价。' : '当日相对 list 最弱，不是做空指令。';
+  const tip = side === 'up'
+    ? '当日相对 list 最强，不是目标价。'
+    : side === 'down'
+      ? '当日相对 list 最弱，不是做空指令。'
+      : '低 PE 只说明估值位置，不是当日最强，也不抵消最弱名单。';
   return `${bits.join(' · ')}。${tip}`;
+}
+
+export function cnCheapCard(row) {
+  return decorate(row, 'neutral', '低PE');
 }
 
 function decorate(row, side, label) {
@@ -175,7 +183,7 @@ export async function buildCnWatchlist({ date } = {}) {
       turnover: take([...priced].filter((row) => row.turnover >= 3).sort((a, b) => b.turnover - a.turnover), MAX.turnover)
         .map((row) => decorate(row, row.changePct >= 0 ? 'up' : 'down', '高换手')),
       cheap: take([...priced].filter((row) => row.pe > 0 && row.pe <= 20).sort((a, b) => a.pe - b.pe), MAX.cheap)
-        .map((row) => decorate(row, 'up', '低PE'))
+        .map((row) => cnCheapCard(row))
     },
     note: 'A股足迹：当日涨跌与换手。不套用美股 Cycle / 价位图。不是下单。'
   };

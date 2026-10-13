@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { optionUniverse } from '../options/engine.js';
+import { sharedOracleUniverse } from './pool.js';
 import { oracleMarket } from './markets.js';
 import { chinaOracleUniverse } from './cn-data.js';
 
@@ -62,7 +62,7 @@ export async function buildSymbolOracle({date,now=Date.now(),universeLoader,mark
   const config=oracleMarket(market);
   const day=date||config.today(new Date(now));
   if(!validOracleDay(day))throw Error('观察日必须是有效的 YYYY-MM-DD');
-  const universe=await (universeLoader||(market==='cn'?chinaOracleUniverse:optionUniverse))({full:true});
+  const universe=await (universeLoader||(market==='cn'?chinaOracleUniverse:sharedOracleUniverse))();
   const unique=[...new Map(universe.map(row=>[String(row.symbol).toUpperCase(),row])).values()];
   const rows=unique.map(row=>({...castSymbol(row.symbol,day,market),name:row.name||row.symbol,from:row.from}));
   const poolNote=universe.poolNote||null;
@@ -70,7 +70,8 @@ export async function buildSymbolOracle({date,now=Date.now(),universeLoader,mark
     retrospective:day<config.today(new Date(now)),sessionDay:config.supported(day),calendarSupported:config.calendarSupported(day),rows,
     counts:Object.fromEntries(['up','down','neutral'].map(key=>[key,rows.filter(r=>r.direction===key).length])),sources:SOURCES,
     poolNote,poolSource:universe.poolSource||null,
-    scope:market==='cn'?'A 股 List 全部股票去重后逐个起卦；与美股独立统计。':(poolNote||'现有期权研究观察池（研究持仓及关注名单），去重后逐个起卦。'),
+    scope:market==='cn'?'A 股 List 全部股票去重后逐个起卦；与美股独立统计。':(poolNote||`美股研究池去重 ${unique.length} 只（含跨资产 ETF），观察日按美东。与奇门美股名单同一套。`),
+    universeCount:unique.length,clockLabel:market==='cn'?config.timeLabel:'美东观察日',
     note:'娱乐卦象分组，不是可验证的股价预测，没有胜率或收益承诺，不生成买卖订单。',
     methodology:'自定义数字起卦：规则版本 + 市场当地观察日 + 大写股票代码经 SHA-256，前三个 32 位数分别模 8、8、6 后加 1，得到上卦、下卦、动爻。静卦为体、动卦为用；互卦取二三四、三四五爻，变卦翻转动爻。体用比和 +1、用生体 +2、体生用 −1、用克体 −2、体克用 0；本卦与变卦异号则观望，否则合计 ≥2 偏涨、≤−2 偏跌，其余观望。数值只是本程序的分类规则，非概率；互卦仅展示，不参与方向评分。这不是传统时间起卦，也不是奇门自动排盘。刷新不会换种子、不会根据已知行情倒改卦象。'};
 }

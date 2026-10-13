@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { generateChartByDatetime, chartToObject } from 'qimen-dunjia';
-import { optionUniverse } from '../options/engine.js';
+import { sharedOracleUniverse } from './pool.js';
 import { chinaOracleUniverse } from './cn-data.js';
 
 export const QIMEN_METHOD = 'qimen-current-3.1.0-symbol-palace-v1';
@@ -23,7 +23,7 @@ const CORE = [
   ['DIA','道指 ETF'],['GLD','黄金 ETF'],['SLV','白银 ETF'],['TLT','长期美债 ETF']
 ].map(([symbol,name])=>({symbol,name,market:'us',from:'跨资产观察'}));
 
-export async function qimenUniverse(scope, { usLoader=optionUniverse, cnLoader=chinaOracleUniverse }={}) {
+export async function qimenUniverse(scope, { usLoader=sharedOracleUniverse, cnLoader=chinaOracleUniverse }={}) {
   if (!['all','us','cn'].includes(scope)) throw Error('奇门范围无效');
   const [us,cn]=await Promise.allSettled([
     scope==='cn'?[]:usLoader({full:true}), scope==='us'?[]:cnLoader()
@@ -98,7 +98,9 @@ export async function buildCurrentQimen({now=Date.now(),scope='all',universeLoad
     ju:`${chart.raw['陰陽']}遁 ${chart.raw['局數']} 局 · ${chart.raw['節氣']} · ${chart.raw['三元']}`,
     chief:`值符 ${chart.raw['值符']}落${chart.raw['值符落宮']} · 值使 ${chart.raw['值使']}落${chart.raw['值使落宮']}`,
     rows,sectors:qimenSectors(rows),counts:Object.fromEntries(['up','down','neutral'].map(k=>[k,rows.filter(r=>r.direction===k).length])),errors:universe.errors,
-    note:'北京时间（UTC+8）整点起局，未作真太阳时校正。相同小时刷新通常同盘，不随机换盘；跨小时重新计算，仍可能同盘。新盘不依赖行情网络。',
+    universeCount:rows.length,usCount:rows.filter(row=>row.market!=='cn').length,
+    timeZone:'Asia/Shanghai',timeLabel:'北京时间',observationTimeZone:'America/New_York',observationTimeLabel:'美东观察日',
+    note:'起局用北京时间（UTC+8）整点，未作真太阳时校正。美股标的的交易日仍标美东。相同小时刷新通常同盘，不随机换盘；跨小时重新计算，仍可能同盘。新盘不依赖行情网络。美股名单与梅花共用去重研究池。',
     methodology:'排盘采用 qimen-dunjia 3.1.0 的拆补法（节气交接起算每五天一元）、夜子时按次日。标的按市场+代码的 SHA-256 固定映射八个外围宫；这是自定义观察规则，不是传统个股取用神法。开/生门 +2、休门 +1、景/杜门 0、伤/惊门 -1、死门 -2，按分数正负分组。星、神、干仅展示，不追加分数。',
     accuracyNote:'当前盘为即时生成、未留存的观察结果，无已结算预测正确率；不回填历史、不混入上方梅花卦象统计。',
     sources:[{title:'排盘引擎与流派说明 · qimen-dunjia',url:'https://github.com/arc119226/qimen_dunjia'}]};

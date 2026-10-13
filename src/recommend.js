@@ -10,6 +10,7 @@ import {
   isCycleExit,
   isCycleTrim,
   loadCycleBook,
+  primaryBlockReason,
   strategyLabel
 } from './strategy/cycle.js';
 import { formatWinRate, loadWatchScore, lookupStageRate } from './strategy/watch-score.js';
@@ -380,6 +381,7 @@ function buildOpportunity(accountId, row, quote, navHint, cycle) {
   const offList = !row.lists?.length || source === '扫描' || source === '工具叠加';
   const aggressive = inst !== 'stock' || (quote?.ok && Math.abs(quote.changePct) >= 6);
   const blocker = cycle?.allowNewLong && inst === 'stock' ? entryBlocker(row.symbol, last ?? cycle.last, cycleStop, change) : null;
+  const blockReason = blocker || primaryBlockReason(cycle);
   const qualify = cycle?.allowNewLong && inst === 'stock' && !blocker;
   return applyCycleAction(accountId, {
     symbol: row.symbol,
@@ -388,9 +390,9 @@ function buildOpportunity(accountId, row, quote, navHint, cycle) {
       ? `Cycle · ${cycle.stageLabel} · ${cycle.score}`
       : (cycle?.ok ? `观察 ${cycle.stageLabel} · ${cycle.score}` : (aggressive ? '激进实验候选' : 'Agentic 新机会')),
     detail: qualify
-      ? `${cycle.note}。0C 只做 02/03/04 且 ≥80 分。实盘默认不下单。禁止追高/摊低。`
+      ? `已确认 ${cycle.stageLabel}，分数 ${cycle.score}。确认和 ≥80 都要满足。实盘默认不下单。禁止追高/摊低。`
       : (cycle?.ok
-        ? `${cycle.note}${blocker ? `。今天不买：${blocker}` : ''}。Reversal 只观察；Exhaustion / Wedge Drop 禁止新开多。`
+        ? `今天不买：${blockReason || '未确认'}。可开形态还要收盘确认，不只是分数 ≥80。`
         : (offList
           ? '清单外扫描发现，可以进推荐，但必须写清最大亏损。禁止裸卖和算不清亏多少的结构。默认草稿。'
           : '可任何操作、承担任何风险。短持是偏好不是硬禁。每条都要有失效价和时间。默认 Phase 1 不下单。')),
@@ -490,12 +492,15 @@ export function asPaperView(opportunities, rows) {
 }
 
 function scanLists(universe) {
+  const symbolCount = universe.symbols.length;
+  const mentionCount = (universe.lists || []).reduce((sum, row) => sum + (row.count || 0), 0);
   return {
     lists: universe.lists.map((row) => ({ file: row.file, title: row.title, bucket: row.bucket, count: row.count })),
     listSummary: universe.fallback
       ? (universe.note || '观察清单缺失，已回退到内置 public-demo 池')
-      : (universe.lists.length ? universe.lists.map((row) => `${row.title} ${row.count}`).join(' · ') : '清单缺失'),
-    symbolCount: universe.symbols.length,
+      : `去重 ${symbolCount} 只${mentionCount && mentionCount !== symbolCount ? `（名单出现 ${mentionCount} 次，重叠已去掉）` : ''}`,
+    symbolCount,
+    mentionCount,
     error: universe.error || null,
     fallback: universe.fallback || null,
     note: universe.note || null
@@ -554,7 +559,7 @@ function paintWinRates(payload, score) {
 function renderRecMarkdown(date, payload) {
   const cycle = payload.scan?.cycle;
   const cycleLine = cycle
-    ? `价格周期：${cycle.name} · 大盘 ${cycle.regimeLabel || cycle.regime} · 扫描 ${cycle.counted} · 可开 ${cycle.tradeable}。只做 Wedge Pop / EMA Crossback / Base 'n Break；≥80 分才买。`
+    ? `价格周期：${cycle.name} · 大盘 ${cycle.regimeLabel || cycle.regime} · 去重扫描 ${payload.scan.symbolCount} · 可开 ${cycle.tradeable}。只做已确认的 Wedge Pop / EMA Crossback / Base 'n Break。分数 ≥80 只是门槛之一。`
     : '';
   const blocks = payload.accounts.map((book) => {
     const lines = book.recommendations.map((row) => (
@@ -753,7 +758,8 @@ async function buildGrokRecommendations() {
         name: cycleBook.name,
         regime: cycleBook.regime,
         regimeLabel: cycleBook.regimeLabel,
-        counted: cycleBook.counted,
+        counted: universe.symbols.length,
+        scored: cycleBook.counted,
         tradeable: cycleBook.tradeable
       }
     },
@@ -958,7 +964,8 @@ async function buildChatgptRecommendations({ force = false } = {}) {
         name: cycleBook.name,
         regime: cycleBook.regime,
         regimeLabel: cycleBook.regimeLabel,
-        counted: cycleBook.counted,
+        counted: universe.symbols.length,
+        scored: cycleBook.counted,
         tradeable: cycleBook.tradeable,
         note: 'ChatGPT 账只标注周期，不按周期改手册动作。'
       }

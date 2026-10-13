@@ -158,6 +158,8 @@ export async function getRiskView(book = 'live') {
     locked: mode.locked,
     limits,
     caps: limits.caps,
+    capsComputable: Number(snap.nav) > 0,
+    capsNote: Number(snap.nav) > 0 ? null : '净值未知，美元上限不可计算',
     kill: mode.mode === 'KILL',
     killReason: mode.reason,
     book: snap,

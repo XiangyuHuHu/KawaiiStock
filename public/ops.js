@@ -75,6 +75,11 @@ function renderEventCards(items, mountId) {
 export function renderOverviewEvents(pack, accountId) {
   const el = document.getElementById('eventStrip');
   if (!el) return;
+  if (pack?.earningsStatus === 'unknown' || pack?.coverage === 'unknown') {
+    el.hidden = false;
+    el.innerHTML = '<p class="kicker">Events</p><p class="muted">财报日历未知：来源没有返回完整数据，不能当成这十天没有财报。</p>';
+    return;
+  }
   if (accountId === 'main' || !pack?.items?.length) {
     el.hidden = true;
     el.innerHTML = '';
@@ -169,7 +174,15 @@ function renderGuards(pack) {
       }</tbody></table>`
       : '<p class="empty">没有「持仓已空、订单还挂着」的单。</p>';
   }
-  if (events) renderEventCards(pack.events || [], 'guardEvents');
+  if (events) {
+    const el = document.getElementById('guardEvents');
+    if (pack.earningsStatus === 'unknown' || pack.coverage === 'unknown') {
+      if (el) {
+        el.hidden = false;
+        el.innerHTML = '<p class="kicker">Events</p><h2>财报 / 到期</h2><p class="muted">财报日历未知：来源没有返回完整数据，不能当成这十天没有财报。</p>';
+      }
+    } else renderEventCards(pack.events || [], 'guardEvents');
+  }
 }
 
 function renderReview(pack, date) {

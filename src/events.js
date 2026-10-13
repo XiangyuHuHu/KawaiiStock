@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { DATA_DIR, todayStamp } from './paths.js';
 import { loadAccounts, loadHoldings } from './holdings.js';
+import { loadUniverse } from './universe.js';
 
 const UA = 'Mozilla/5.0 (compatible; KawaiiResearchDesk/0.1)';
 const CACHE_PATH = join(DATA_DIR, 'events-cache.json');
@@ -42,7 +43,7 @@ async function fetchNasdaqEarnings(date) {
   return rows.map((row) => {
     const symbol = String(row.symbol || row.ticker || '').toUpperCase();
     return {
-      date: row.date || row.lastYearRptDt || date,
+      date,
       symbol,
       name: row.name || row.companyName || symbol,
       timing: timingLabel(row.time || row.earningsTime || row.hour),
@@ -53,11 +54,19 @@ async function fetchNasdaqEarnings(date) {
   }).filter((row) => row.symbol);
 }
 
+export function calendarCacheFresh(cached, from, days, now = Date.now()) {
+  if (!cached?.rows || cached.from !== from || cached.days !== days) return false;
+  const age = cached.fetchedAt ? now - new Date(cached.fetchedAt).getTime() : Infinity;
+  if (!(age >= 0) || age >= CACHE_MS) return false;
+  if ((cached.errors || []).length) return false;
+  if (!cached.rows.length) return false;
+  return true;
+}
+
 async function loadCalendar(from, days, { refresh = false } = {}) {
   const cached = await readJson(CACHE_PATH);
-  const age = cached?.fetchedAt ? Date.now() - new Date(cached.fetchedAt).getTime() : Infinity;
-  if (!refresh && cached?.rows && age < CACHE_MS && cached.from === from && cached.days === days) {
-    return { ...cached, cached: true };
+  if (!refresh && calendarCacheFresh(cached, from, days)) {
+    return { ...cached, cached: true, coverage: 'complete' };
   }
   const dates = Array.from({ length: days }, (_, i) => addDays(from, i));
   const rows = [];
@@ -74,7 +83,8 @@ async function loadCalendar(from, days, { refresh = false } = {}) {
     from,
     days,
     rows,
-    errors
+    errors,
+    coverage: errors.length ? (rows.length ? 'partial' : 'unknown') : 'complete'
   };
   try {
     await mkdir(DATA_DIR, { recursive: true });
@@ -141,6 +151,16 @@ export async function buildEventsDesk({ deskId = 'grok', days = 10, refresh = fa
     if (!key || watch.has(key)) continue;
     watch.set(key, { symbol: key, name: key, accounts: ['tape'] });
   }
+  try {
+    const universe = await loadUniverse();
+    for (const row of universe.symbols || []) {
+      const key = String(row.symbol || '').toUpperCase();
+      if (!key || watch.has(key)) continue;
+      watch.set(key, { symbol: key, name: key, accounts: ['list'] });
+    }
+  } catch {
+    /* 清单缺失时日历仍可按持仓过滤，并在覆盖状态里标明未知。 */
+  }
 
   let calendar = { rows: [], errors: [], cached: false };
   try {
@@ -180,12 +200,18 @@ export async function buildEventsDesk({ deskId = 'grok', days = 10, refresh = fa
     date,
     days,
     cached: Boolean(calendar.cached),
-    note: '持仓和观察带上的财报/期权到期。不是下单，不进推荐/模拟/实际操作。',
+    note: (calendar.errors || []).length
+      ? '财报日历不完整。缺失的日期是未知，不是“这十天没有财报”。不是下单。'
+      : '持仓、观察带和去重观察清单上的财报/期权到期。不是下单，不进推荐/模拟/实际操作。',
+    coverage: calendar.coverage || ((calendar.errors || []).length ? 'unknown' : 'complete'),
+    earningsStatus: (calendar.errors || []).length && !earnings.length ? 'unknown' : ((calendar.errors || []).length ? 'partial' : 'known'),
     counts: {
       watched: watch.size,
+      calendarRows: (calendar.rows || []).length,
       earnings: earnings.length,
       expiries: expiries.length,
-      upcoming: items.length
+      upcoming: items.length,
+      missingDates: (calendar.errors || []).length
     },
     errors: calendar.errors || [],
     items,

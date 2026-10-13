@@ -223,13 +223,19 @@ function renderOverview(desk) {
     fetch('/api/risk?book=live').then((r) => r.json()).then((gate) => {
       const extra = {
         'Gateway': `${gate.mode === 'NOT_CONFIGURED' ? '未配置' : (gate.mode || (gate.kill ? 'KILL' : 'NORMAL'))}${gate.modeReason ? ` · ${gate.modeReason}` : ''}`,
-        '单笔亏损': gate.caps?.maxOrderRisk != null ? `$${Number(gate.caps.maxOrderRisk).toFixed(0)}（3%净值）` : '3%净值',
-        '单标 / 主题': gate.caps?.maxSingleRisk != null
+        '单笔亏损': gate.capsComputable === false
+          ? '净值未知，上限不可计算'
+          : (gate.caps?.maxOrderRisk != null ? `$${Number(gate.caps.maxOrderRisk).toFixed(0)}（3%净值）` : '3%净值'),
+        '单标 / 主题': gate.capsComputable === false
+          ? '未配置'
+          : (gate.caps?.maxSingleRisk != null
           ? `$${Number(gate.caps.maxSingleRisk).toFixed(0)} / $${Number(gate.caps.maxThemeRisk || 0).toFixed(0)}`
-          : '8% / 15%',
-        '日亏 / 周亏': gate.caps?.maxDailyLoss != null
+          : '8% / 15%'),
+        '日亏 / 周亏': gate.capsComputable === false
+          ? '未配置'
+          : (gate.caps?.maxDailyLoss != null
           ? `上限 $${Number(gate.caps.maxDailyLoss).toFixed(0)} / $${Number(gate.caps.maxWeeklyLoss || 0).toFixed(0)}`
-          : '6% / 8%',
+          : '6% / 8%'),
         '已实现日/周': `${money2(gate.book?.realizedPnlToday)} / ${money2(gate.book?.realizedPnlWeek)}`
       };
       document.getElementById('riskDl').insertAdjacentHTML(
@@ -724,7 +730,7 @@ function simMetrics(summary) {
     ['现金', money2(summary?.cash)],
     ['持仓数', summary?.positionCount ?? 0],
     ['累计盈亏', money2(summary?.pnl)],
-    ['收益率', pct(summary?.pnlPct)]
+    ['收益率', summary?.returnStatus === 'not-configured' || summary?.pnlPct == null ? '不可计算 / 未配置' : pct(summary?.pnlPct)]
   ].map(([label, value]) => `<div><span>${label}</span><strong class="${signedClass(label.includes('盈亏') || label === '收益率' ? summary?.pnl : 0)}">${value}</strong></div>`).join('');
 }
 

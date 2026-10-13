@@ -2,6 +2,7 @@ import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { lastSessionStamp, OBSIDIAN_WATCH, REPORTS_DIR, todayStamp } from '../paths.js';
 import { loadQuotes } from '../quotes.js';
+import { rememberTape } from '../tape.js';
 import { loadUniverse } from '../universe.js';
 import { loadHistoricals } from '../historicals.js';
 import { computeLevels } from '../levels.js';
@@ -27,7 +28,22 @@ async function readJson(path) {
 
 function card(symbol, meta, cycle, quote) {
   const feeds = [];
-  if (cycle?.allowNewLong || cycle?.watch) feeds.push('cycle');
+  let priceConflict = null;
+  if (quote?.ok && quote.last > 0) {
+    priceConflict = rememberTape(symbol, { last: quote.last, source: quote.source || 'watch-quote', quoteAt: quote.quoteAt });
+  }
+  if (cycle?.last > 0 && quote?.ok && quote.last > 0 && Math.abs(quote.last - cycle.last) / cycle.last >= 0.003) {
+    rememberTape(symbol, { last: cycle.last, source: 'cycle-close' });
+    priceConflict = {
+      flag: 'price-conflict',
+      used: quote.last,
+      other: cycle.last,
+      source: quote.source || 'watch-quote',
+      otherSource: 'cycle-close',
+      note: `报价 ${quote.last} 与周期收盘 ${cycle.last} 不一致`
+    };
+  }
+  if ((cycle?.allowNewLong || cycle?.watch) && !cycle?.pendingConfirm) feeds.push('cycle');
   if (cycle?.rs20 != null && cycle.rs20 > 0) feeds.push('rs');
   if (cycle?.volumeRatio != null && cycle.volumeRatio >= 1.5) feeds.push('volume');
   if (cycle?.stage === 'wedge-drop' || cycle?.stage === 'exhaustion-extension') feeds.push('avoid');
@@ -48,8 +64,11 @@ function card(symbol, meta, cycle, quote) {
     stage: cycle?.stage || 'unknown',
     stageLabel: cycle?.stageLabel || 'DATA UNAVAILABLE',
     score: cycle?.score ?? null,
-    allowNewLong: Boolean(cycle?.allowNewLong),
-    watch: Boolean(cycle?.watch),
+    allowNewLong: Boolean(cycle?.allowNewLong) && !cycle?.pendingConfirm,
+    watch: Boolean(cycle?.watch) && !cycle?.pendingConfirm,
+    pendingConfirm: Boolean(cycle?.pendingConfirm),
+    pendingConfirmLabel: cycle?.pendingConfirmLabel || null,
+    priceConflict: cycle?.priceConflict || quote?.priceConflict || null,
     regime: cycle?.regime || 'unknown',
     rs20: cycle?.rs20 ?? null,
     volumeRatio: cycle?.volumeRatio ?? null,
@@ -89,7 +108,7 @@ function realizedVol(bars, n = 20) {
 
 function upsideRank(row) {
   if (!row?.last || row.score == null) return -999;
-  if (row.stage === 'wedge-drop' || row.stage === 'reversal-extension') return -999;
+  if (row.pendingConfirm || row.stage === 'wedge-drop' || row.stage === 'reversal-extension') return -999;
   let rank = row.score;
   if (row.allowNewLong) rank += 22;
   else if (row.watch) rank += 6;
@@ -273,10 +292,10 @@ liveTrading: false
 
 > 足迹不是预测。先扫描、再确认、有计划再动。不是下单指令，不进推荐 / 模拟 / 实际操作。
 ${pack.listNote ? `> ${pack.listNote}\n` : ''}
-> 策略：${CYCLE_NAME}。大盘 ${pack.regimeLabel || pack.regime}。只做 Wedge Pop / EMA Crossback / Base 'n Break，且 ≥80 分。缺日线写 DATA UNAVAILABLE。
+> 策略：${CYCLE_NAME}。大盘 ${pack.regimeLabel || pack.regime}。只做已确认的 Wedge Pop / EMA Crossback / Base 'n Break。分数 ≥80 只是门槛之一，未确认时只写一条具体原因。缺日线写 DATA UNAVAILABLE。
 > 每条后面的胜率是该 Cycle 阶段在「最可能涨/跌」里的次日方向胜率，不是带止损的交易胜率。
 
-扫描 ${pack.scanned} 只 · 可开 ${pack.counts?.setups ?? 0} · 共振 ${pack.counts?.confluence ?? 0}。
+去重扫描 ${pack.scanned} 只${pack.mentionCount && pack.mentionCount !== pack.scanned ? `（名单出现 ${pack.mentionCount} 次，重叠已去掉）` : ''} · 可开 ${pack.counts?.setups ?? 0} · 共振 ${pack.counts?.confluence ?? 0}。
 
 ## 阶段胜率
 
@@ -376,6 +395,7 @@ export async function buildWatchlist({ date } = {}) {
     regime: cycleBook.regime,
     regimeLabel: cycleBook.regimeLabel,
     scanned: symbols.length,
+    mentionCount: (universe.lists || []).reduce((sum, row) => sum + (row.count || 0), 0),
     listError: universe.fallback ? null : (universe.error || null),
     listNote: universe.note || null,
     demoFallback: universe.fallback || null,

@@ -22,6 +22,7 @@ const STATUS_ZH = {
   'Above Fair Value': '高于合理价值',
   'Historical Anchor': '仅年报锚点',
   'Model unavailable': '暂无模型估值',
+  'Model anomaly': '模型异常',
   'Financial facts unavailable': '年度财务数据不足',
   'Pre-revenue model unavailable': '尚未商业化，暂不估值',
   'Sales value below net debt': '营收估值不足以覆盖净负债',
@@ -175,7 +176,11 @@ function renderTable() {
   const currency = state.market === 'cn' ? 'CNY' : 'USD';
   const paging = state.data?.pagination;
   const status = document.getElementById('screenerStatus');
-  const demoNote = state.data?.listNote ? `${state.data.listNote} ` : '';
+    const demoNote = state.data?.listNote ? `${state.data.listNote} ` : '';
+    const staleNote = state.data?.staleNote ? `${state.data.staleNote} ` : '';
+    const deduped = state.data?.dedupedSymbolCount != null
+      ? `去重 ${state.data.dedupedSymbolCount} 只${state.data.mentionCount && state.data.mentionCount !== state.data.dedupedSymbolCount ? `（名单出现 ${state.data.mentionCount} 次）` : ''}。 `
+      : '';
   if (state.loading && !state.data) {
     status.textContent = '正在加载公开行情与财报。';
     document.getElementById('universeTable').innerHTML = '<p class="empty">正在加载观察池。</p>';
@@ -183,13 +188,13 @@ function renderTable() {
     return;
   }
   if (state.data?.error || state.data?.detail) {
-    status.textContent = `${demoNote}${state.data.detail || state.data.error}`;
+    status.textContent = `${demoNote}${staleNote}${deduped}${state.data.detail || state.data.error}`;
   } else if (state.data?.partial) {
-    status.textContent = `${demoNote}部分数据源暂时不可用，下面显示已成功获取的公司。`;
+    status.textContent = `${demoNote}${staleNote}${deduped}部分数据源暂时不可用，下面显示已成功获取的公司。`;
   } else {
     status.textContent = paging
-      ? `${demoNote}${state.data.activeWatchlist?.title || ''}：本页 ${state.data.stocks.length} 只，序号 ${paging.start}–${paging.end}，总计 ${paging.total} 只。${state.loading ? ' 刷新中…' : ''}`
-      : demoNote;
+      ? `${demoNote}${staleNote}${deduped}${state.data.activeWatchlist?.title || ''}：本页 ${state.data.stocks.length} 只，序号 ${paging.start}–${paging.end}，总计 ${paging.total} 只。${state.loading ? ' 刷新中…' : ''}`
+      : `${demoNote}${staleNote}${deduped}`;
   }
   if (!stocks.length) {
     document.getElementById('universeTable').innerHTML = `<p class="empty">${state.search ? `没有找到“${escapeHtml(state.search)}”。` : '当前页没有股票满足这个筛选。'}</p>`;

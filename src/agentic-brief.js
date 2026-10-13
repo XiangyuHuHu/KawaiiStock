@@ -169,8 +169,10 @@ export function composeAgenticBrief({
   const eligibleBuys = (options?.buys || options?.ideas || []).filter((row) => row.eligible);
   const regime = watch?.regime || 'unknown';
 
+  const scanned = (watch?.universeSnapshot?.rows || []).map((row) => upper(row.symbol)).filter(Boolean);
   const focus = new Set([
     ...heldSet,
+    ...scanned,
     ...(watch?.boards?.confluence || []).map((row) => upper(row.symbol)),
     ...(watch?.boards?.setups || []).map((row) => upper(row.symbol)),
     ...(watch?.featured?.up || []).map((row) => upper(row.symbol)),
@@ -276,12 +278,15 @@ export function composeAgenticBrief({
     if (row.changePct != null && row.changePct >= 15) blockers.push(`今日已涨 ${row.changePct.toFixed(1)}%，禁止追高`);
     if (positions.length + opens.length >= 3) blockers.push('Agentic 已有 1–3 仓上限');
     const buy = blockers.length === 0 && row.watch === 'up' && !recsMissing && row.rec === 'up';
+    const blockReason = blockers[0] || null;
     opens.push({
       ...row,
       action: buy ? 'CONSIDER' : 'WATCH',
+      blockReason,
+      blockers,
       reason: buy
         ? `观察 ${row.stageLabel} ${row.score} 分已确认，推荐 ${row.recAction}。算卦 ${leanLabel(row.oracle)} 只作对照。仍须过闸、带券商止损；未授权不实盘。`
-        : blockers.join('；') + '。'
+        : `${blockReason}。`
     });
   }
 
@@ -309,14 +314,32 @@ export function composeAgenticBrief({
   }
 
   const sources = {
-    watch: watch?.ok ? { date: watch.date, regime: watch.regimeLabel || watch.regime, scanned: watch.scanned, counts: watch.counts || null } : { missing: true },
+    watch: watch?.ok ? {
+      date: watch.date,
+      generatedAt: watch.generatedAt || null,
+      regime: watch.regimeLabel || watch.regime,
+      scanned: watch.scanned ?? null,
+      voteScope: scanned.length ? 'full-scan' : 'boards',
+      voteCount: focus.size,
+      demoFallback: watch.demoFallback || null,
+      counts: watch.counts || null
+    } : { missing: true },
     oracle: { note: '梅花个股卦 + 当前时盘奇门宫位。娱乐对照，不是胜率，不能单独开仓。' },
     options: options?.ok
-      ? { date: options.date, scanned: options.scanned, buyCount: options.buys?.length ?? 0, cached: Boolean(options.cached), stale: Boolean(optionsStale) }
+      ? {
+        date: options.date,
+        generatedAt: options.generatedAt || null,
+        scanned: options.scanned,
+        buyCount: options.buys?.length ?? 0,
+        cached: Boolean(options.cached),
+        stale: Boolean(optionsStale),
+        emptyScan: Number(options.scanned) === 0,
+        emptyNote: Number(options.scanned) === 0 ? '期权扫描为 0，不把空扫描当成看空。' : null
+      }
       : { missing: true },
     recs: recsMissing
-      ? { missing: true, date: recs?.date || null }
-      : { date: recs.date, priorities: (recsBook.priorities || []).map((row) => ({ symbol: row.symbol, action: row.action, title: row.title })) }
+      ? { missing: true, date: recs?.date || null, generatedAt: recs?.generatedAt || null }
+      : { date: recs.date, generatedAt: recs.generatedAt || null, priorities: (recsBook.priorities || []).map((row) => ({ symbol: row.symbol, action: row.action, title: row.title })) }
   };
 
   return {
@@ -347,7 +370,7 @@ export function composeAgenticBrief({
     },
     votes,
     rules: [
-      '每日观察足迹不是下单；新开只认已确认的 Wedge Pop / EMA Crossback / Base n Break，且 ≥80 分。',
+      '每日观察足迹不是下单；新开要已确认的 Wedge Pop / EMA Crossback / Base n Break。分数 ≥80 只是门槛之一，没通过时只写一条具体原因。',
       '算卦（梅花/奇门）只作对照，不能单独产生买入。',
       '期权只有校验通过的合格候选才算信号；缺买卖盘时间就当没有期权信号。',
       '必须有当日推荐操作，才能把「每日任务结论」算进新开。',
@@ -431,6 +454,25 @@ function collectSymbols({ watch, options, recs, holdings }) {
   return [...symbols];
 }
 
+function newerThan(upstreamAt, briefAt) {
+  const upstream = Date.parse(upstreamAt || '');
+  const brief = Date.parse(briefAt || '');
+  return Number.isFinite(upstream) && (!Number.isFinite(brief) || upstream > brief + 1000);
+}
+
+export function briefUpstreamStatus(brief, upstream = {}) {
+  const notes = [];
+  if (newerThan(upstream.watch?.generatedAt, brief?.generatedAt)) notes.push('每日观察生成时间新于这份意见');
+  if (newerThan(upstream.options?.generatedAt, brief?.generatedAt)) notes.push('期权扫描生成时间新于这份意见');
+  if (newerThan(upstream.recs?.generatedAt, brief?.generatedAt)) notes.push('推荐操作生成时间新于这份意见');
+  if (upstream.watch?.scanned != null && brief?.sources?.watch?.scanned != null && upstream.watch.scanned !== brief.sources.watch.scanned) {
+    notes.push(`观察去重扫描 ${upstream.watch.scanned}，意见里记的是 ${brief.sources.watch.scanned}`);
+  }
+  if (Number(upstream.options?.scanned) === 0) notes.push('期权扫描为 0，不把空扫描当成看空');
+  const upstreamStale = notes.some((line) => !line.startsWith('期权扫描为 0'));
+  return { upstreamStale, upstreamNotes: notes };
+}
+
 export async function loadAgenticBrief(date) {
   const day = date || todayStamp();
   const exact = await readJson(join(OBSIDIAN_BRIEF, `${day}.json`));
@@ -446,6 +488,15 @@ export async function loadAgenticBrief(date) {
     return null;
   }
   return null;
+}
+
+export async function loadAgenticBriefWithFreshness(date) {
+  const brief = await loadAgenticBrief(date);
+  if (!brief?.date) return brief;
+  const watch = await readJson(join(OBSIDIAN_WATCH, `${brief.date}.json`));
+  const options = await loadOptionsFile(brief.date);
+  const recs = await readJson(join(recsDir('grok'), `${brief.date}.json`));
+  return { ...brief, ...briefUpstreamStatus(brief, { watch, options, recs }) };
 }
 
 export async function buildAndWriteAgenticBrief({

@@ -28,6 +28,15 @@ const marketApi = createMarketApiHandler();
 let narrativeUpdate = null;
 let dailyRun = null;
 
+async function refreshAgenticBrief(date) {
+  try {
+    const { buildAndWriteAgenticBrief } = await import('./src/agentic-brief.js');
+    await buildAndWriteAgenticBrief({ date });
+  } catch {
+    /* 意见刷新失败不挡住观察、期权或推荐本身。 */
+  }
+}
+
 const PORT = Number(process.env.PORT || 3479);
 const HOST = process.env.HOST || '127.0.0.1';
 const TYPES = {
@@ -158,10 +167,12 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'POST' && url.pathname === '/api/recommendations/run') {
       const advisor = url.searchParams.get('advisor') || 'grok';
-      sendJson(res, 200, await buildRecommendations({
+      const recs = await buildRecommendations({
         advisor,
         force: url.searchParams.get('force') === '1'
-      }));
+      });
+      if (advisor === 'grok') await refreshAgenticBrief(recs?.date);
+      sendJson(res, 200, recs);
       return;
     }
     if (req.method === 'POST' && url.pathname === '/api/daily/run') {
@@ -418,6 +429,7 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       pack.written = await writeOptions(pack);
+      await refreshAgenticBrief(pack.date);
       sendJson(res, 200, pack);
       return;
     }
@@ -463,8 +475,12 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     if (req.method === 'GET' && url.pathname === '/api/agentic-brief') {
-      const { loadAgenticBrief } = await import('./src/agentic-brief.js');
-      const pack = await loadAgenticBrief(url.searchParams.get('date') || undefined);
+      const { loadAgenticBriefWithFreshness, buildAndWriteAgenticBrief } = await import('./src/agentic-brief.js');
+      let pack = await loadAgenticBriefWithFreshness(url.searchParams.get('date') || undefined);
+      if (pack?.upstreamStale) {
+        pack = await buildAndWriteAgenticBrief({ date: pack.date });
+        pack = { ...pack, regeneratedBecause: 'upstream-newer' };
+      }
       sendJson(res, 200, pack || { ok: false, empty: true, note: '还没有 Agentic 操作意见。每日任务会写；也可点刷新。不是下单。' });
       return;
     }
@@ -558,7 +574,9 @@ const server = http.createServer(async (req, res) => {
       const { loadWatchlist, buildAndWriteWatchlist } = await import('./src/strategy/watchlist.js');
       const date = url.searchParams.get('date');
       if (url.searchParams.get('refresh') === '1') {
-        sendJson(res, 200, await buildAndWriteWatchlist({ date }));
+        const pack = await buildAndWriteWatchlist({ date });
+        await refreshAgenticBrief(pack?.date || date);
+        sendJson(res, 200, pack);
         return;
       }
       const pack = await loadWatchlist(date, { auto: false });
@@ -569,7 +587,9 @@ const server = http.createServer(async (req, res) => {
       const { buildAndWriteWatchlist } = await import('./src/strategy/watchlist.js');
       let body = {};
       try { body = await readJsonBody(req); } catch { body = {}; }
-      sendJson(res, 200, await buildAndWriteWatchlist({ date: body.date || url.searchParams.get('date') }));
+      const pack = await buildAndWriteWatchlist({ date: body.date || url.searchParams.get('date') });
+      await refreshAgenticBrief(pack?.date);
+      sendJson(res, 200, pack);
       return;
     }
     if (req.method === 'GET' && url.pathname === '/api/watch-score') {
