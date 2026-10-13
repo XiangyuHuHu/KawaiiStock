@@ -146,18 +146,31 @@ test('low PE board is neutral and does not call the weakest name strongest', () 
 
 test('a partial earnings cache is not fresh, and null capital is not 0%', () => {
   const now = Date.parse('2026-10-13T16:00:00Z');
+  const datesFetched = Array.from({ length: 10 }, (_, i) => {
+    const utc = new Date(Date.UTC(2026, 9, 13 + i));
+    return utc.toISOString().slice(0, 10);
+  });
   assert.equal(calendarCacheFresh({
     from: '2026-10-13',
     days: 10,
     fetchedAt: '2026-10-13T15:00:00Z',
-    rows: [{ symbol: 'AAPL' }],
+    datesFetched,
+    rows: [{ symbol: 'AAPL', date: '2026-10-14' }],
     errors: [{ date: '2026-10-14', error: 'earnings 500' }]
   }, '2026-10-13', 10, now), false);
   assert.equal(calendarCacheFresh({
     from: '2026-10-13',
     days: 10,
     fetchedAt: '2026-10-13T15:00:00Z',
-    rows: [{ symbol: 'AAPL' }],
+    rows: [{ symbol: 'AAPL', date: '10/14/2025' }],
+    errors: []
+  }, '2026-10-13', 10, now), false);
+  assert.equal(calendarCacheFresh({
+    from: '2026-10-13',
+    days: 10,
+    fetchedAt: '2026-10-13T15:00:00Z',
+    datesFetched,
+    rows: [{ symbol: 'AAPL', date: '2026-10-14' }],
     errors: []
   }, '2026-10-13', 10, now), true);
   const missing = accountReturn({ startingNav: null, pnl: 0 }, null);

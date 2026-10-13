@@ -54,12 +54,22 @@ async function fetchNasdaqEarnings(date) {
   }).filter((row) => row.symbol);
 }
 
+function windowDates(from, days) {
+  return Array.from({ length: days }, (_, i) => addDays(from, i));
+}
+
 export function calendarCacheFresh(cached, from, days, now = Date.now()) {
   if (!cached?.rows || cached.from !== from || cached.days !== days) return false;
   const age = cached.fetchedAt ? now - new Date(cached.fetchedAt).getTime() : Infinity;
   if (!(age >= 0) || age >= CACHE_MS) return false;
   if ((cached.errors || []).length) return false;
   if (!cached.rows.length) return false;
+  const expected = windowDates(from, days);
+  const fetched = cached.datesFetched;
+  if (!Array.isArray(fetched) || expected.some((day) => !fetched.includes(day))) return false;
+  const end = expected.at(-1);
+  const iso = /^\d{4}-\d{2}-\d{2}$/;
+  if (cached.rows.some((row) => !iso.test(row.date || '') || row.date < from || row.date > end)) return false;
   return true;
 }
 
@@ -68,12 +78,14 @@ async function loadCalendar(from, days, { refresh = false } = {}) {
   if (!refresh && calendarCacheFresh(cached, from, days)) {
     return { ...cached, cached: true, coverage: 'complete' };
   }
-  const dates = Array.from({ length: days }, (_, i) => addDays(from, i));
+  const dates = windowDates(from, days);
   const rows = [];
   const errors = [];
+  const datesFetched = [];
   for (const date of dates) {
     try {
       rows.push(...await fetchNasdaqEarnings(date));
+      datesFetched.push(date);
     } catch (error) {
       errors.push({ date, error: error.message });
     }
@@ -82,9 +94,10 @@ async function loadCalendar(from, days, { refresh = false } = {}) {
     fetchedAt: new Date().toISOString(),
     from,
     days,
+    datesFetched,
     rows,
     errors,
-    coverage: errors.length ? (rows.length ? 'partial' : 'unknown') : 'complete'
+    coverage: errors.length ? (rows.length ? 'partial' : 'unknown') : (datesFetched.length === dates.length && rows.length ? 'complete' : 'unknown')
   };
   try {
     await mkdir(DATA_DIR, { recursive: true });
@@ -204,7 +217,9 @@ export async function buildEventsDesk({ deskId = 'grok', days = 10, refresh = fa
       ? '财报日历不完整。缺失的日期是未知，不是“这十天没有财报”。不是下单。'
       : '持仓、观察带和去重观察清单上的财报/期权到期。不是下单，不进推荐/模拟/实际操作。',
     coverage: calendar.coverage || ((calendar.errors || []).length ? 'unknown' : 'complete'),
-    earningsStatus: (calendar.errors || []).length && !earnings.length ? 'unknown' : ((calendar.errors || []).length ? 'partial' : 'known'),
+    earningsStatus: calendar.coverage === 'unknown' || ((calendar.errors || []).length && !earnings.length)
+      ? 'unknown'
+      : ((calendar.errors || []).length ? 'partial' : 'known'),
     counts: {
       watched: watch.size,
       calendarRows: (calendar.rows || []).length,

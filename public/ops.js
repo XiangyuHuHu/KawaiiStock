@@ -95,6 +95,9 @@ export function renderOverviewEvents(pack, accountId) {
     return;
   }
   el.hidden = false;
+  const partial = pack.earningsStatus === 'partial' || pack.coverage === 'partial'
+    ? '<p class="muted">部分日期没有返回，缺的那些天是未知，不是没有财报。</p>'
+    : '';
   el.innerHTML = `<p class="kicker">Events</p>
     <div class="event-chips">${rows.slice(0, 10).map((row) => `
       <article class="event-chip ${row.kind || 'earnings'}">
@@ -102,6 +105,7 @@ export function renderOverviewEvents(pack, accountId) {
         <strong>${row.symbol}</strong>
         <small>${row.kind === 'option-expiry' ? '期权到期' : '财报'}</small>
       </article>`).join('')}</div>
+    ${partial}
     <p class="muted">不是下单。完整列表在「止损」。</p>`;
 }
 
@@ -180,6 +184,14 @@ function renderGuards(pack) {
       if (el) {
         el.hidden = false;
         el.innerHTML = '<p class="kicker">Events</p><h2>财报 / 到期</h2><p class="muted">财报日历未知：来源没有返回完整数据，不能当成这十天没有财报。</p>';
+      }
+    } else if (pack.earningsStatus === 'partial' || pack.coverage === 'partial') {
+      renderEventCards(pack.events || [], 'guardEvents');
+      if (el && !el.hidden) {
+        el.insertAdjacentHTML('beforeend', '<p class="muted">部分日期没有返回，缺的那些天是未知，不是没有财报。</p>');
+      } else if (el) {
+        el.hidden = false;
+        el.innerHTML = '<p class="kicker">Events</p><h2>财报 / 到期</h2><p class="muted">财报日历不完整：缺的日期是未知，不能当成这十天没有财报。</p>';
       }
     } else renderEventCards(pack.events || [], 'guardEvents');
   }
