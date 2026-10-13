@@ -23,7 +23,7 @@ function renderBrief(pack) {
   title.textContent = pack.headline || 'Agentic 操作意见';
   const a = pack.actions || {};
   body.innerHTML = `
-    <p class="muted">观察日 ${esc(pack.date)} · 持仓快照 ${esc(pack.holdings?.asOf || '未知')}${pack.holdings?.stale ? ' · 不是今天' : ''} · ${esc(pack.stance)} · 不是订单</p>
+    <p class="muted">观察日 ${esc(pack.date)} · ${esc(pack.holdings?.staleLabel || pack.holdings?.asOf || '快照日期未知')} · ${esc(pack.stance)} · 不是订单</p>
     ${list('先处理', a.exit)}
     ${list('减仓', a.trim)}
     ${list('现仓', a.hold)}

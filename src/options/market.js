@@ -579,12 +579,46 @@ export async function loadBestChain(symbol, { minDte = 3, maxDte = 45, now = new
   return last || { ...first, ok: false, error: '无符合期限的合约', calls: [], puts: [], expirationCandidates: ranked.slice(0, 4) };
 }
 
-export async function loadVix() {
-  const hit = cacheGet('vix', 5 * 60 * 1000);
-  if (hit) return hit;
-  const chart = await loadChart('^VIX', { range: '5d', interval: '1d' });
-  if (!chart.ok) return cacheSet('vix', { ok: false, last: null });
-  return cacheSet('vix', { ok: true, last: chart.last, change: chart.bars.at(-1)?.close - chart.bars.at(-2)?.close });
+export function vixValue(vix) {
+  const last = Number(vix?.last ?? (typeof vix === 'number' ? vix : NaN));
+  return vix?.ok !== false && last > 0 ? last : 'unknown';
+}
+
+export async function loadVix({ loader, quote } = {}) {
+  if (!loader && !quote) {
+    const hit = cacheGet('vix', 5 * 60 * 1000);
+    if (hit) return hit;
+  }
+  const load = loader || ((symbol, opts) => loadChart(symbol, opts));
+  const read = quote || fetchJson;
+  let pack = { ok: false, last: null, source: null, status: 'unknown' };
+  try {
+    const chart = await load('^VIX', { range: '1mo', interval: '1d' });
+    if (chart?.ok && Number(chart.last) > 0) {
+      const prev = chart.bars?.at?.(-2)?.close;
+      pack = {
+        ok: true,
+        last: Number(chart.last),
+        change: prev > 0 ? Number(chart.last) - prev : null,
+        source: chart.source || 'yahoo',
+        status: 'known'
+      };
+    }
+  } catch {
+    pack = { ok: false, last: null, source: null, status: 'unknown' };
+  }
+  if (!pack.ok) {
+    try {
+      const json = await read('https://cdn.cboe.com/api/global/delayed_quotes/quotes/_VIX.json', 8000);
+      const last = num(json?.data?.current_price);
+      if (last > 0) {
+        pack = { ok: true, last, change: num(json?.data?.price_change), source: 'cboe', status: 'known' };
+      }
+    } catch {
+      pack = { ok: false, last: null, source: null, status: 'unknown' };
+    }
+  }
+  return loader || quote ? pack : cacheSet('vix', pack);
 }
 
 export async function loadSentiment(symbol) {

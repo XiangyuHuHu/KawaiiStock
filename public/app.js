@@ -172,8 +172,8 @@ function renderOverview(desk) {
   document.getElementById('headline').textContent = rec?.priorities?.[0]?.title
     || (writable ? '尚无今日推荐操作。点「推荐操作」生成。' : (desk.updates?.reason || '尚无 ChatGPT 推荐文件；缺失不等于 HOLD。'));
   document.getElementById('statusLine').textContent = holdings.stale
-    ? (holdings.note || `缺数据：这不是实时持仓。上次 ${holdings.asOf || '未知'}。`)
-    : (holdings.note || `${desk.desk?.label} · ${account.label} · 来源 ${account.source} · 持仓 ${(holdings.positions || []).length}`);
+    ? (holdings.staleLabel || holdings.note || `缺数据：这不是实时持仓。上次 ${holdings.asOf || '未知'}。`)
+    : (holdings.staleLabel || holdings.note || `${desk.desk?.label} · ${account.label} · 来源 ${account.source} · 持仓 ${(holdings.positions || []).length}`);
   document.getElementById('generatedAt').textContent = `生成 ${new Date(desk.generatedAt).toLocaleString('zh-CN')}`;
   document.getElementById('colophonText').textContent = writable
     ? '每日流水：真实持仓 → 推荐操作 → 模拟操作 → 实际操作。今日买卖是独立草稿。默认不下单。'
@@ -184,7 +184,7 @@ function renderOverview(desk) {
     ['现金', money2(holdings.cash)],
     ['持仓数', holdings.positions?.length ?? 0],
     ['台', desk.desk?.label || 'Grok'],
-    ['持仓快照日期', holdings.asOf ? String(holdings.asOf).slice(0, 10) : '未知']
+    ['持仓快照', holdings.staleLabel || (holdings.asOf ? String(holdings.asOf).slice(0, 10) : '未知')]
   ].map(([label, value]) => `<article><span>${label}</span><strong>${value}</strong></article>`).join('');
 
   const actions = rec?.priorities?.length
@@ -402,11 +402,12 @@ function renderBook(desk) {
     : account.source === 'manual'
       ? '无接口。改完点「保存主账户」，会同时写入 Obsidian 持仓档案。每日任务不会覆盖主账户。'
       : holdings.stale
-        ? (holdings.note || '缺数据：这不是实时持仓。接口失败时不会把昨日档案改标成今日。')
-        : '由 Robinhood 扫描覆盖。也可以把扫描 JSON 贴到下面。这是真实持仓，不是模拟操作。';
+        ? (holdings.staleLabel || holdings.note || '缺数据：这不是实时持仓。接口失败时不会把昨日档案改标成今日。')
+        : '可以导入 Robinhood 持仓 JSON。这是研究快照，不是下单，也不是模拟操作。';
+  const canImport = isWritable() && (account.source !== 'manual' || account.id === 'agentic');
   document.getElementById('saveBookBtn').hidden = !(isWritable() && account.source === 'manual');
   document.getElementById('addRowBtn').hidden = !(isWritable() && account.source === 'manual');
-  document.getElementById('scanSheet').hidden = !(isWritable() && account.source !== 'manual');
+  document.getElementById('scanSheet').hidden = !canImport;
   document.getElementById('runRecsBtn').hidden = !isWritable();
   const dailyBtn = document.getElementById('runDailyBtn');
   if (dailyBtn) dailyBtn.hidden = !isWritable();
@@ -416,7 +417,7 @@ function renderBook(desk) {
   const recMap = Object.fromEntries((canShow ? desk.accountRec?.recommendations || [] : []).map((row) => [String(row.symbol).toUpperCase(), row]));
   const editable = isWritable() && account.source === 'manual';
   const staleBanner = !desk.updates && holdings.stale
-    ? `<p class="stale-banner">缺数据：上次可靠扫描 ${holdings.asOf || '无'}。禁止把昨日持仓当成实时。</p>`
+    ? `<p class="stale-banner">${holdings.staleLabel || `缺数据：上次可靠扫描 ${holdings.asOf || '无'}。禁止把昨日持仓当成实时。`}</p>`
     : '';
   const body = rows.map((row, index) => `
     <tr>
@@ -430,10 +431,13 @@ function renderBook(desk) {
       <td>${row.symbol ? `<button type="button" class="text-btn" data-open-symbol="${row.symbol}">详情</button>` : ''}</td>
     </tr>
   `).join('');
+  const emptyBook = account.id === 'agentic'
+    ? '<p class="empty">Agentic 持仓是空的。在下面导入 Robinhood 持仓 JSON。只记快照，不下单。</p>'
+    : '<p class="empty">空仓。小账户等待扫描；主账户可手改增加。</p>';
   document.getElementById('positionTable').innerHTML = staleBanner + (rows.length ? `<table>
     <thead><tr><th>代码</th><th>名称</th><th class="num">数量</th><th>定位</th><th>动作</th><th>策略 / 胜率</th><th>理由</th><th></th></tr></thead>
     <tbody>${body}</tbody>
-  </table>` : '<p class="empty">空仓。小账户等待扫描；主账户可手改增加。</p>');
+  </table>` : emptyBook);
   bindOpenSymbols(document.getElementById('positionTable'));
 
   document.querySelectorAll('#positionTable input').forEach((input) => {
@@ -1127,9 +1131,24 @@ async function saveMain() {
   if (!data.error) loadAccount('main');
 }
 
-async function applyScan() {
+async function importHoldingsPayload(payload) {
   const account = currentAccount();
-  if (!account || account.source === 'manual') return;
+  if (!account || (account.source === 'manual' && account.id !== 'agentic')) {
+    document.getElementById('scanStatus').textContent = '主账户请用手改。Agentic 可以导入持仓 JSON。';
+    return;
+  }
+  const res = await fetch(`/api/accounts/${account.id}/holdings/import`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  const data = await res.json();
+  document.getElementById('scanStatus').textContent = data.error
+    || `${data.staleLabel || '已导入'} · ${data.positions?.length ?? 0} 只。不下单。`;
+  if (!data.error) loadAccount(account.id);
+}
+
+async function applyScan() {
   let payload;
   try {
     payload = JSON.parse(document.getElementById('scanInput').value);
@@ -1137,14 +1156,19 @@ async function applyScan() {
     document.getElementById('scanStatus').textContent = 'JSON 无法解析。';
     return;
   }
-  const res = await fetch(`/api/accounts/${account.id}/scan`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
-  const data = await res.json();
-  document.getElementById('scanStatus').textContent = data.error || `已覆盖 ${data.positions?.length ?? 0} 条。`;
-  if (!data.error) loadAccount(account.id);
+  await importHoldingsPayload(payload);
+}
+
+async function importHoldingsFile(file) {
+  if (!file) return;
+  let payload;
+  try {
+    payload = JSON.parse(await file.text());
+  } catch {
+    document.getElementById('scanStatus').textContent = 'JSON 无法解析。';
+    return;
+  }
+  await importHoldingsPayload(payload);
 }
 
 async function runRecs() {
@@ -1286,6 +1310,12 @@ async function main() {
   });
   document.getElementById('saveBookBtn').addEventListener('click', saveMain);
   document.getElementById('applyScanBtn').addEventListener('click', applyScan);
+  document.getElementById('scanFileBtn')?.addEventListener('click', () => document.getElementById('scanFile')?.click());
+  document.getElementById('scanFile')?.addEventListener('change', (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    importHoldingsFile(file);
+  });
   document.getElementById('runRecsBtn').addEventListener('click', runRecs);
   document.getElementById('runDailyBtn')?.addEventListener('click', runDaily);
   document.getElementById('refreshAllBtn')?.addEventListener('click', refreshAll);

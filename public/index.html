@@ -136,9 +136,11 @@
         <article class="sheet" id="scanSheet">
           <p class="kicker">Robinhood Scan</p>
           <h2>覆盖小账户持仓</h2>
-          <p class="muted">两个小账户接受扫描 JSON。主账户走上面的手改保存。接口失败时会写明缺数据，不会把昨日持仓改标成今日实时。</p>
-          <textarea id="scanInput" rows="8" placeholder='{"asOf":"2026-08-25T10:00:00-04:00","cash":1200,"positions":[{"symbol":"MRVL","qty":30,"avgCost":210}]}'></textarea>
-          <button type="button" class="text-btn" id="applyScanBtn">应用扫描</button>
+          <p class="muted">Agentic 可以导入 Robinhood 持仓 JSON（粘贴或选文件）。只写入研究快照，不会下单。没有日期或日期不是今天时，会标出已过几天。</p>
+          <textarea id="scanInput" rows="8" placeholder='{"updated_at":"2026-10-01T15:00:00Z","results":[{"symbol":"HAE","quantity":"12","average_buy_price":"80.5"}]}'></textarea>
+          <button type="button" class="text-btn" id="applyScanBtn">导入持仓</button>
+          <button type="button" class="text-btn" id="scanFileBtn">选择 JSON 文件</button>
+          <input id="scanFile" type="file" accept="application/json,.json" hidden>
           <p class="muted" id="scanStatus"></p>
         </article>
       </section>

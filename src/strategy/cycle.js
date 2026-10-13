@@ -335,7 +335,8 @@ export function classifyBars(bars, options = {}) {
   const clean = bars || [];
   if (options.version === 'v1') return gateCrossbackBreak(classifyBarsV1(clean, options), clean);
   // V2 is a completed daily-bar signal; a live quote must not rewrite its indicators.
-  const confirmed = confirmCycle(clean, classifyBarsV1(clean, { ...options, lastOverride: undefined }));
+  const legacy = classifyBarsV1(clean, { ...options, lastOverride: undefined });
+  const confirmed = confirmCycle(clean, legacy, { spot: options.lastOverride });
   return gateCrossbackBreak(confirmed, clean);
 }
 

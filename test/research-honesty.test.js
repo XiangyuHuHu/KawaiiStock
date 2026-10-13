@@ -4,6 +4,8 @@ import { adjustCyclicalValuation, anomalyFromMargin, fundamentalsStale } from '.
 import { briefUpstreamStatus, composeAgenticBrief } from '../src/agentic-brief.js';
 import { rankOptionPool } from '../src/options/engine.js';
 import { classifyBars, gateCrossbackBreak, primaryBlockReason } from '../src/strategy/cycle.js';
+import { confirmCycle } from '../src/strategy/confirmation.js';
+import { clearMarketCache, loadVix, vixValue } from '../src/options/market.js';
 import { cnCheapCard } from '../src/strategy/watchlist-cn.js';
 import { calendarCacheFresh } from '../src/events.js';
 import { accountReturn } from '../src/sim.js';
@@ -178,6 +180,84 @@ test('a partial earnings cache is not fresh, and null capital is not 0%', () => 
   assert.equal(missing.pnlPct, null);
   const funded = accountReturn({ startingNav: 1000, pnl: 25 }, 1000);
   assert.equal(funded.pnlPct, 2.5);
+});
+
+function flatBars(lastClose, { count = 70, volume = 1_000_000, lastVolume = volume } = {}) {
+  const bars = [];
+  for (let i = 0; i < count; i += 1) {
+    const close = i === count - 1 ? lastClose : 100;
+    const day = new Date(Date.UTC(2026, 0, 1 + i)).toISOString().slice(0, 10);
+    bars.push({
+      date: day,
+      open: close - 0.1,
+      high: close + 0.4,
+      low: close - 0.3,
+      close,
+      volume: i === count - 1 ? lastVolume : volume
+    });
+  }
+  return bars;
+}
+
+const breakoutLegacy = {
+  ok: true,
+  score: 90,
+  allowNewLong: true,
+  tradeable: true,
+  regime: 'risk-on',
+  rs20: 3,
+  stage: 'unknown',
+  stageLabel: 'DATA',
+  stageNo: 0,
+  scores: {}
+};
+
+test('a close above referenceHigh is not called no breakout', () => {
+  const out = confirmCycle(flatBars(110, { lastVolume: 100_000 }), breakoutLegacy);
+  assert.ok(out.last > out.confirmation.referenceHigh);
+  assert.equal(out.confirmation.aboveReference, true);
+  assert.equal(out.confirmation.setup, 'breakout-pending');
+  const text = out.confirmation.reasons.join('；');
+  assert.doesNotMatch(text, /没有新突破/);
+  assert.match(text, /高于参考高点/);
+  assert.match(text, /量能/);
+});
+
+test('a live price above referenceHigh waits for the close', () => {
+  const out = confirmCycle(flatBars(100, { lastVolume: 100_000 }), breakoutLegacy, { spot: 110 });
+  assert.ok(out.confirmation.referenceHigh < 110);
+  assert.ok(out.last <= out.confirmation.referenceHigh);
+  const text = out.confirmation.reasons.join('；');
+  assert.doesNotMatch(text, /没有新突破/);
+  assert.match(text, /尚未确认突破/);
+});
+
+test('price inside the prior range still has no breakout', () => {
+  const out = confirmCycle(flatBars(100, { lastVolume: 100_000 }), breakoutLegacy, { spot: 100 });
+  assert.match(out.confirmation.reasons.join('；'), /没有新突破/);
+  assert.equal(out.confirmation.aboveReference, false);
+});
+
+test('vix is a number from a public quote, or the word unknown', async () => {
+  clearMarketCache();
+  const missing = await loadVix({
+    loader: async () => ({ ok: false }),
+    quote: async () => { throw new Error('down'); }
+  });
+  assert.equal(missing.status, 'unknown');
+  assert.equal(vixValue(missing), 'unknown');
+  assert.equal(missing.last, null);
+  const yahoo = await loadVix({
+    loader: async () => ({ ok: true, last: 15.34, source: 'yahoo', bars: [{ close: 15.2 }, { close: 15.34 }] })
+  });
+  assert.equal(vixValue(yahoo), 15.34);
+  assert.equal(yahoo.source, 'yahoo');
+  const cboe = await loadVix({
+    loader: async () => ({ ok: false }),
+    quote: async () => ({ data: { current_price: 16.2, price_change: 0.1 } })
+  });
+  assert.equal(vixValue(cboe), 16.2);
+  assert.equal(cboe.source, 'cboe');
 });
 
 test('shared tape flags two prices for the same symbol', () => {

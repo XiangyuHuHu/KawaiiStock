@@ -8,7 +8,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { PUBLIC_DIR, REPORTS_DIR, lastSessionStamp, logMissingPaths } from './src/paths.js';
 import { buildDesk, buildTape, buildUniversePage } from './src/desk.js';
-import { accountById, applyScan, loadAccounts, loadConfig, loadHoldings, loadStrategy, saveHoldings } from './src/holdings.js';
+import { accountById, applyScan, canImportHoldings, importHoldings, loadAccounts, loadConfig, loadHoldings, loadStrategy, saveHoldings } from './src/holdings.js';
 import { loadDailyReports, loadRecFiles } from './src/reports.js';
 import { buildRecommendations } from './src/recommend.js';
 import { buildCompare } from './src/compare.js';
@@ -730,6 +730,30 @@ const server = http.createServer(async (req, res) => {
       }
       const body = await readJsonBody(req);
       sendJson(res, 200, await applyScan(account, body));
+      return;
+    }
+    const importMatch = url.pathname.match(/^\/api\/accounts\/([^/]+)\/holdings\/import$/);
+    if (req.method === 'POST' && importMatch) {
+      const { config, account } = await resolveAccount(importMatch[1], deskId);
+      if (!account) {
+        sendJson(res, 404, { error: 'unknown-account' });
+        return;
+      }
+      if (!config.desk?.writable) {
+        sendJson(res, 400, { error: 'readonly-desk', message: 'ChatGPT 台只读，不能导入持仓。' });
+        return;
+      }
+      if (!canImportHoldings(account)) {
+        sendJson(res, 400, { error: 'use-manual', message: '主账户请用手改。Agentic 可以导入持仓 JSON，不会下单。' });
+        return;
+      }
+      try {
+        const body = await readJsonBody(req);
+        const book = await importHoldings(account, body);
+        sendJson(res, 200, { ...book, liveTrading: false, imported: true });
+      } catch (error) {
+        sendJson(res, 400, { error: error.message, liveTrading: false });
+      }
       return;
     }
     const strategyMatch = url.pathname.match(/^\/api\/accounts\/([^/]+)\/strategy$/);

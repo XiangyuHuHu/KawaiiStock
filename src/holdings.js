@@ -299,16 +299,29 @@ export async function refreshHoldingPrices(account, { date = todayStamp(), quote
   return saveHoldings(account, next);
 }
 
+export function holdingsAge(book, now = new Date()) {
+  const day = asOfStamp(book?.dataAsOf || book?.asOf);
+  if (!day) return { ageDays: null, asOf: null, label: '快照日期未知，不能当成今日持仓' };
+  const today = todayStamp(now);
+  const ageDays = Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${day}T00:00:00Z`)) / 86400000);
+  if (!Number.isFinite(ageDays) || ageDays < 0) return { ageDays: null, asOf: day, label: '快照日期未知，不能当成今日持仓' };
+  if (ageDays === 0) return { ageDays: 0, asOf: day, label: `快照日期 ${day}` };
+  return { ageDays, asOf: day, label: `快照已过 ${ageDays} 天（${day}），不是今日实时` };
+}
+
 function annotateHoldings(account, data) {
-  const freshness = account.source === 'robinhood'
-    ? holdingsFreshness(data)
-    : { fresh: true, stale: Boolean(data.stale) };
+  const age = holdingsAge(data);
+  const ageStale = age.ageDays == null || age.ageDays > 0;
+  const broker = account.source === 'robinhood' ? holdingsFreshness(data) : null;
+  const stale = broker ? (broker.fresh ? false : (broker.stale || ageStale)) : (Boolean(data.stale) || ageStale);
   return {
     ...data,
     missing: false,
     configured: true,
-    stale: freshness.stale,
-    live: account.source === 'robinhood' ? freshness.fresh && data.scanStatus !== 'unavailable' : false
+    stale,
+    staleAgeDays: age.ageDays,
+    staleLabel: age.label,
+    live: account.source === 'robinhood' ? Boolean(broker?.fresh) && data.scanStatus !== 'unavailable' : false
   };
 }
 
@@ -443,6 +456,110 @@ function mapPositions(rows) {
     marketValue: row.marketValue ?? null,
     unrealizedPnl: row.unrealizedPnl ?? null
   })).filter((row) => row.symbol);
+}
+
+function importNumber(value) {
+  if (value == null || value === '') return null;
+  const n = Number(String(value).replace(/[$,]/g, ''));
+  return Number.isFinite(n) ? n : null;
+}
+
+function importSymbol(row) {
+  const raw = row?.symbol || row?.ticker || row?.chain_symbol || row?.instrument?.symbol || row?.instrument?.symbol_code || '';
+  const symbol = String(raw).trim().toUpperCase();
+  return /^[A-Z][A-Z0-9.-]{0,12}$/.test(symbol) ? symbol : '';
+}
+
+export function canImportHoldings(account) {
+  return Boolean(account) && (account.id === 'agentic' || account.source !== 'manual');
+}
+
+/** 把研究台 JSON 或 Robinhood 持仓导出收成同一份档案。不发送订单。 */
+export function normalizeHoldingsImport(raw) {
+  const body = Array.isArray(raw) ? { positions: raw } : (raw && typeof raw === 'object' ? raw : {});
+  const equity = body.positions || body.results || body.equity_positions || body.equityPositions || [];
+  const options = body.optionPositions || body.option_positions || body.options || [];
+  const skipped = [];
+  const positions = [];
+  for (const row of equity) {
+    if (!row || typeof row !== 'object') continue;
+    const symbol = importSymbol(row);
+    const qty = importNumber(row.qty ?? row.quantity ?? row.shares ?? row.shares_available_for_sells);
+    if (!symbol || !(qty > 0)) {
+      skipped.push(symbol || '无代码');
+      continue;
+    }
+    positions.push({
+      symbol,
+      name: row.name || row.simple_name || row.instrument?.simple_name || symbol,
+      qty,
+      role: row.role || '导入持仓',
+      theme: row.theme || '',
+      cost: importNumber(row.cost ?? row.cost_basis),
+      avgCost: importNumber(row.avgCost ?? row.average_buy_price ?? row.average_cost ?? row.avg_price),
+      last: importNumber(row.last ?? row.price ?? row.quote?.last ?? row.quote?.last_trade_price),
+      marketValue: importNumber(row.marketValue ?? row.equity ?? row.market_value),
+      unrealizedPnl: importNumber(row.unrealizedPnl ?? row.unrealized_pl)
+    });
+  }
+  const optionPositions = [];
+  for (const row of options) {
+    if (!row || typeof row !== 'object') continue;
+    const symbol = importSymbol(row);
+    const qty = importNumber(row.qty ?? row.quantity);
+    if (!symbol || !(qty > 0)) continue;
+    optionPositions.push({
+      symbol,
+      type: String(row.type || row.option_type || '').toLowerCase(),
+      expiration: row.expiration || row.expiration_date || null,
+      strike: importNumber(row.strike ?? row.strike_price),
+      qty,
+      side: row.side || 'long'
+    });
+  }
+  const asOf = body.asOf || body.dataAsOf || body.updated_at || body.updatedAt || body.exportedAt
+    || equity.find((row) => row?.updated_at || row?.updatedAt)?.updated_at
+    || equity.find((row) => row?.updated_at || row?.updatedAt)?.updatedAt
+    || null;
+  return {
+    positions,
+    optionPositions,
+    openOrders: [],
+    skipped,
+    asOf,
+    cash: importNumber(body.cash ?? body.cash_available ?? body.portfolio_cash ?? body.equity?.cash),
+    equity: importNumber(body.equity ?? body.totalValue ?? body.total_value ?? body.portfolio_value),
+    buyingPower: importNumber(body.buyingPower ?? body.buying_power)
+  };
+}
+
+export async function importHoldings(account, raw, now = new Date()) {
+  if (!canImportHoldings(account)) {
+    throw new Error('主账户请用手改。Agentic 可以导入持仓 JSON，不会下单。');
+  }
+  const parsed = normalizeHoldingsImport(raw);
+  if (!parsed.positions.length && !parsed.optionPositions.length) {
+    throw new Error(parsed.skipped.length ? '文件里没有可识别的代码和数量。' : '文件里没有持仓。');
+  }
+  const age = holdingsAge({ asOf: parsed.asOf, dataAsOf: parsed.asOf }, now);
+  const dated = age.ageDays != null;
+  const stale = !dated || age.ageDays > 0;
+  const label = dated ? age.label : '导入文件没有可用日期，年龄未知，不是今日实时';
+  const saved = await saveHoldings(account, {
+    asOf: parsed.asOf || null,
+    dataAsOf: parsed.asOf || null,
+    cash: parsed.cash,
+    equity: parsed.equity,
+    totalValue: parsed.equity,
+    buyingPower: parsed.buyingPower,
+    scanStatus: 'imported',
+    stale,
+    note: `${label}。已导入 ${parsed.positions.length} 只股票${parsed.optionPositions.length ? `、${parsed.optionPositions.length} 条期权` : ''}。这是只读快照，不下单。${parsed.skipped.length ? `跳过 ${parsed.skipped.length} 条无代码或数量为 0 的记录。` : ''}`,
+    positions: parsed.positions,
+    optionPositions: parsed.optionPositions,
+    openOrders: []
+  });
+  return annotateHoldings(account, saved);
 }
 
 export async function applyScan(account, scan) {

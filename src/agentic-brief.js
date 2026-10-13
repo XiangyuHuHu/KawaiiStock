@@ -2,7 +2,7 @@ import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { asOfStamp, OBSIDIAN_BRIEF, OBSIDIAN_WATCH, REPORTS_DIR, recsDir, todayStamp } from './paths.js';
 import { loadOptionsFile } from './options/engine.js';
-import { loadAccounts, loadHoldings } from './holdings.js';
+import { holdingsAge, loadAccounts, loadHoldings } from './holdings.js';
 import { castSymbol } from './oracle/symbols.js';
 import { currentQimenChart, qimenSymbol } from './oracle/qimen-current.js';
 
@@ -163,6 +163,7 @@ export function composeAgenticBrief({
     .filter((row) => row.symbol && row.qty > 0);
   const heldSet = new Set(positions.map((row) => row.symbol));
   const asOf = asOfStamp(holdings?.asOf || holdings?.dataAsOf);
+  const holdingAge = holdingsAge(holdings, now);
   const staleHoldings = !asOf || asOf < day;
   const recsMissing = !recs || recs.error || !recsBook;
   const optionsStale = !options?.ok || (options.date && options.date < day) || options.cached;
@@ -228,7 +229,7 @@ export function composeAgenticBrief({
       orders.push({
         ...row,
         action: 'REVIEW',
-        reason: `持仓快照 ${asOf || '未知'}，不是 ${day}。先核对实盘再动；不能按旧仓下达卖出。`
+        reason: `${holdingAge.label}。先核对实盘再动；不能按旧仓下达卖出。`
       });
       continue;
     }
@@ -355,6 +356,8 @@ export function composeAgenticBrief({
     holdings: {
       asOf: asOf,
       stale: staleHoldings,
+      staleAgeDays: holdingAge.ageDays,
+      staleLabel: holdingAge.label,
       cash: holdings?.cash ?? null,
       positionCount: positions.length,
       symbols: positions.map((row) => row.symbol)

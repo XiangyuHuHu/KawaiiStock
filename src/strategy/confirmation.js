@@ -5,7 +5,7 @@ export const RESEARCH_RULES = Object.freeze({ riskFraction: 0.005, positionFract
 const mean = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
 
 /** Fixed, interpretable rules. Score is a ranking heuristic, not a probability. */
-export function confirmCycle(bars, legacy) {
+export function confirmCycle(bars, legacy, extra = {}) {
   const reasons = [];
   const out = { ...legacy, version: STRATEGY_VERSION, experimental: true, legacyScore: legacy.score, legacyAllowNewLong: legacy.allowNewLong, allowNewLong: false, sizeR: 0 };
   if (!legacy.ok || bars.length < 60) return { ...out, confirmation: { confirmed: false, reasons: ['完整日线不足 60 根'] }, note: 'V2 待确认：完整日线不足' };
@@ -22,7 +22,12 @@ export function confirmCycle(bars, legacy) {
   const tight = (high - low) / low <= 0.16;
   const recentRange = mean(prior.slice(-10).map((row) => row.high - row.low));
   const olderRange = mean(prior.slice(-30, -10).map((row) => row.high - row.low));
-  const breakout = bar.close > high && prev.close <= high && (tight || recentRange < olderRange * 0.8) && volumeRatio >= 1.3;
+  const spot = Number(extra.spot ?? legacy.spot);
+  const closeAbove = bar.close > high;
+  const spotAbove = spot > high && !closeAbove;
+  const structureOk = tight || recentRange < olderRange * 0.8;
+  const volumeOk = volumeRatio >= 1.3;
+  const breakout = closeAbove && structureOk && volumeOk;
   const pullback = atr > 0 && prev.low >= ema20.at(-2) - atr && prev.low <= ema20.at(-2) + atr * 0.3
     && prev.close <= ema20.at(-2) + atr * 0.5 && bar.close > prev.high && bar.close > bar.open && volumeRatio >= 1;
   if (legacy.regime !== 'risk-on') reasons.push('大盘不是 Risk On');
@@ -30,7 +35,14 @@ export function confirmCycle(bars, legacy) {
   if (!(legacy.rs20 > 0)) reasons.push('未跑赢 QQQ');
   if (!(dollarVolume >= 20_000_000 && bar.close >= 5)) reasons.push('价格或成交额不足');
   if (!(atr > 0) || (bar.close - ema20.at(-1)) / atr > 2) reasons.push('波动数据缺失或已过度延伸');
-  if (!breakout && !pullback) reasons.push('没有新突破 / 回踩收复确认');
+  if (closeAbove && !breakout && !pullback) {
+    const gaps = [];
+    if (!structureOk) gaps.push('区间未收紧');
+    if (!volumeOk) gaps.push(`量能 ${volumeRatio == null ? '未知' : volumeRatio.toFixed(2)} 不足 1.3 倍`);
+    reasons.push(`收盘 ${bar.close} 高于参考高点 ${high}，突破未确认：${gaps.join('、') || '结构未满足'}`);
+  } else if (spotAbove && !pullback) {
+    reasons.push(`现价 ${spot} 高于参考高点 ${high}，收盘 ${bar.close} 尚未确认突破`);
+  } else if (!breakout && !pullback) reasons.push('没有新突破 / 回踩收复确认');
   const stop = atr > 0 ? Math.min(bar.close - atr, Math.max(bar.close - 2 * atr, Math.min(bar.low, prev.low) - atr * 0.15)) : null;
   const stopPct = stop > 0 ? (bar.close - stop) / bar.close : null;
   if (!(stopPct >= 0.015 && stopPct <= 0.10)) reasons.push('止损距离不在 1.5%–10%');
@@ -43,7 +55,7 @@ export function confirmCycle(bars, legacy) {
   return { ...out, score, scores: { ...legacy.scores, catalyst: 0 }, stage, stageLabel: labels[stage] || legacy.stageLabel, stageNo: stageNo[stage] || legacy.stageNo,
     signalDate: bar.date, last: bar.close, stop, atr, atrPct: atr / bar.close * 100, volumeRatio,
     allowNewLong: confirmed, watch: !confirmed && legacy.tradeable, tradeable: confirmed || legacy.tradeable, sizeR: confirmed ? 1 : 0,
-    confirmation: { confirmed, reasons, setup: breakout ? 'breakout' : pullback ? 'pullback-reclaim' : null, referenceHigh: high, dollarVolume },
+    confirmation: { confirmed, reasons, setup: breakout ? 'breakout' : pullback ? 'pullback-reclaim' : (closeAbove || spotAbove ? 'breakout-pending' : null), referenceHigh: high, aboveReference: closeAbove || spotAbove, dollarVolume },
     riskPlan: { ...RESEARCH_RULES, stop, target: stop > 0 ? bar.close + (bar.close - stop) * 2 : null },
     note: `V2 实验 · ${confirmed ? '收盘确认，次日限价候选' : reasons.join('；')} · 分数不是胜率`
   };

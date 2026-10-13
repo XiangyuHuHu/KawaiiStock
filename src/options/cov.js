@@ -499,7 +499,7 @@ export function evaluateCov(ctx) {
     ivAtm,
     rv: vol.rvFast,
     ivLabel: ivRv.label,
-    vix: vix?.last ?? null,
+    vix: Number(vix?.last) > 0 && vix?.ok !== false ? Number(vix.last) : (Number(vix) > 0 ? Number(vix) : 'unknown'),
     sentiment: sentiment?.ok ? {
       bullishPct: sentiment.bullishPct,
       watchers: sentiment.watchers,

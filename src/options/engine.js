@@ -14,7 +14,7 @@ import { loadUniverse } from '../universe.js';
 import { loadHistoricals } from '../historicals.js';
 import { freshnessFromContext } from '../risk/freshness.js';
 import { getStrategy, listStrategies } from './strategies.js';
-import { clearMarketCache, loadEarnings, loadBestChain, loadChart, loadExpirationChain, loadSentiment, loadVix, loadYahooQuote, mapPool, pickUnderlyingQuoteAt } from './market.js';
+import { clearMarketCache, loadEarnings, loadBestChain, loadChart, loadExpirationChain, loadSentiment, loadVix, loadYahooQuote, mapPool, pickUnderlyingQuoteAt, vixValue } from './market.js';
 import { attachOptionScore, updateOptionScore } from './score.js';
 
 export { listStrategies };
@@ -276,7 +276,9 @@ export async function buildOptionsDesk({ date, strategyId = 'cov', deskId = 'gro
       summary: strategy.summary
     },
     strategies: listStrategies(),
-    vix: vix.ok ? vix.last : null,
+    vix: vixValue(vix),
+    vixStatus: vix.status || (vix.ok ? 'known' : 'unknown'),
+    vixSource: vix.source || null,
     poolNote: fullUniverse.poolNote || null,
     poolSource: fullUniverse.poolSource || null,
     note: ['草稿，不是下单指令。不写进推荐操作 / 模拟操作 / 实际操作。主账户不做期权。最多 0–3 个买入候选；Yahoo/Nasdaq 若缺每腿 Bid/Ask 时间则不能进买入。没有优势就 NO TRADE。', fullUniverse.poolNote].filter(Boolean).join(' '),
@@ -387,7 +389,7 @@ draft: true
 
 > ${pack.note}
 > 策略：${pack.strategy?.summary || ''}
-> 扫描 ${pack.scanned} 只 · VIX ${pack.vix ?? '—'}
+> 扫描 ${pack.scanned} 只 · VIX ${pack.vix === 'unknown' || pack.vix == null ? '未知' : pack.vix}
 
 ## 今日最佳期权机会
 
