@@ -269,7 +269,7 @@ function listedDays(row, asOf) {
 function cycleAnnualized(row, asOf) {
   const capital = num(row.capitalAtRisk) || (num(row.costBasis) > 0 ? row.costBasis * CONTRACT_SHARES : 0);
   if (!(capital > 0) || !(row.premiumIncome > 0)) return null;
-  const horizon = Math.max(daysBetween(row.openedAt, asOf), listedDays(row, asOf), 1);
+  const horizon = Math.max(daysBetween(row.openedAt, asOf), num(row.horizonDays) || 0, listedDays(row, asOf), 1);
   return (row.premiumIncome / capital) * (365 / horizon);
 }
 
@@ -360,6 +360,7 @@ export function openCashSecuredPut(ledger, input = {}) {
   const next = clone(ledger);
   const credit = money(built.leg.premium * CONTRACT_SHARES);
   next.cash = money(next.cash + credit);
+  const horizonDays = num(input.dte) || daysBetween(now, `${built.leg.expiration}T00:00:00.000Z`);
   next.positions[symbol] = {
     symbol,
     phase: PHASE.PUT,
@@ -368,6 +369,7 @@ export function openCashSecuredPut(ledger, input = {}) {
     premiumsPerShare: built.leg.premium,
     premiumIncome: credit,
     capitalAtRisk: reserved,
+    horizonDays,
     assignments: 0,
     calledAway: 0,
     rolls: input.roll ? (Number(input.priorRolls) || 0) + 1 : 0,
@@ -396,6 +398,7 @@ export function openCoveredCall(ledger, input = {}) {
   const credit = money(built.leg.premium * CONTRACT_SHARES);
   next.cash = money(next.cash + credit);
   held.premiumIncome = money(held.premiumIncome + credit);
+  held.horizonDays = Math.max(num(held.horizonDays) || 0, num(input.dte) || daysBetween(now, `${built.leg.expiration}T00:00:00.000Z`));
   held.phase = PHASE.CALL;
   held.rolls = input.roll ? (Number(held.rolls) || 0) + 1 : (Number(held.rolls) || 0);
   held.leg = { ...built.leg, openedAt: now };
@@ -523,7 +526,7 @@ export function bookPremiumYield(ledger, asOf = new Date().toISOString()) {
   const opened = rows.map((row) => Date.parse(row.openedAt)).filter((t) => Number.isFinite(t));
   if (!opened.length || !(ledger.seed > 0) || !(income > 0)) return null;
   const elapsed = Math.max(1, Math.round((Date.parse(asOf) - Math.min(...opened)) / 86400000));
-  const listed = Object.values(ledger.positions || {}).map((row) => listedDays(row, asOf)).filter((n) => n > 0);
+  const listed = Object.values(ledger.positions || {}).map((row) => Math.max(num(row.horizonDays) || 0, listedDays(row, asOf))).filter((n) => n > 0);
   const horizon = Math.max(elapsed, listed.length ? Math.min(...listed) : 0, 1);
   return (income / ledger.seed) * (365 / horizon);
 }

@@ -224,6 +224,24 @@ test('a falling stock increases unrealized loss and max drawdown', () => {
   assert.ok(assigned.ledger.maxDrawdown > fallen.maxDrawdown);
 });
 
+test('same-day assignment keeps the put horizon in the annualized yield', () => {
+  const opened = openCashSecuredPut(emptyWheelLedger(), {
+    symbol: 'day',
+    strike: 100,
+    premium: 2,
+    expiration: '2026-11-12',
+    dte: 30,
+    spot: 110,
+    asOf: '2026-10-13T15:00:00.000Z'
+  });
+  const assigned = settleWheel(opened.ledger, { symbol: 'DAY', spot: 90, asOf: '2026-10-13T20:00:00.000Z' });
+  const row = assigned.ledger.positions.DAY;
+  assert.equal(row.phase, 'long-stock');
+  assert.equal(row.leg, null);
+  assert.ok(Math.abs(row.annualizedYield - (200 / 10000) * (365 / 30)) < 1e-6);
+  assert.ok(row.annualizedYield < 1);
+});
+
 test('opening a put rejects when cash cannot secure the strike', () => {
   const denied = openCashSecuredPut(emptyWheelLedger(), {
     symbol: 'big',
