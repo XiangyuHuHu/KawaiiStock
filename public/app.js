@@ -397,16 +397,19 @@ function renderBook(desk) {
   const holdings = desk.holdings || {};
   const rows = state.draftRows;
   document.getElementById('bookTitle').textContent = `${account.label}持仓`;
+  const canImport = isWritable() && (account.source !== 'manual' || account.id === 'agentic');
+  const handEdit = isWritable() && account.source === 'manual' && account.id !== 'agentic';
   document.getElementById('bookNote').textContent = !isWritable()
     ? 'ChatGPT 对照档案，只读。要改账本请切到 Grok 台。'
-    : account.source === 'manual'
-      ? '无接口。改完点「保存主账户」，会同时写入 Obsidian 持仓档案。每日任务不会覆盖主账户。'
-      : holdings.stale
-        ? (holdings.staleLabel || holdings.note || '缺数据：这不是实时持仓。接口失败时不会把昨日档案改标成今日。')
-        : '可以导入 Robinhood 持仓 JSON。这是研究快照，不是下单，也不是模拟操作。';
-  const canImport = isWritable() && (account.source !== 'manual' || account.id === 'agentic');
-  document.getElementById('saveBookBtn').hidden = !(isWritable() && account.source === 'manual');
-  document.getElementById('addRowBtn').hidden = !(isWritable() && account.source === 'manual');
+    : account.id === 'agentic'
+      ? (holdings.staleLabel ? `${holdings.staleLabel}。导入只写研究快照，不下单。` : '可以导入 Robinhood 持仓 JSON。这是研究快照，不下单。')
+      : account.source === 'manual'
+        ? '无接口。改完点「保存主账户」，会同时写入 Obsidian 持仓档案。每日任务不会覆盖主账户。'
+        : holdings.stale
+          ? (holdings.staleLabel || holdings.note || '缺数据：这不是实时持仓。接口失败时不会把昨日档案改标成今日。')
+          : '可以导入 Robinhood 持仓 JSON。这是研究快照，不是下单，也不是模拟操作。';
+  document.getElementById('saveBookBtn').hidden = !handEdit;
+  document.getElementById('addRowBtn').hidden = !handEdit;
   document.getElementById('scanSheet').hidden = !canImport;
   document.getElementById('runRecsBtn').hidden = !isWritable();
   const dailyBtn = document.getElementById('runDailyBtn');
@@ -415,7 +418,7 @@ function renderBook(desk) {
   renderBookUpdates(desk);
   const canShow = !desk.updates || desk.updates.status === 'available';
   const recMap = Object.fromEntries((canShow ? desk.accountRec?.recommendations || [] : []).map((row) => [String(row.symbol).toUpperCase(), row]));
-  const editable = isWritable() && account.source === 'manual';
+  const editable = isWritable() && account.source === 'manual' && account.id !== 'agentic';
   const staleBanner = !desk.updates && holdings.stale
     ? `<p class="stale-banner">${holdings.staleLabel || `缺数据：上次可靠扫描 ${holdings.asOf || '无'}。禁止把昨日持仓当成实时。`}</p>`
     : '';
