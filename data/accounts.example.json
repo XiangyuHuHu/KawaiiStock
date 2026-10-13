@@ -1,0 +1,33 @@
+{
+  "desks": [
+    {
+      "id": "grok",
+      "label": "研究台",
+      "kicker": "账户研究",
+      "subtitle": "本地示例配置；请填入自己的观察清单和持仓来源",
+      "writable": true,
+      "vault": "grok",
+      "accounts": [
+        { "id": "main", "label": "主账户", "short": "主账户", "style": "core-long", "source": "manual", "holdingsStem": "main-holdings", "strategyFile": "main-strategy.md" },
+        { "id": "tactical", "label": "战术账户", "short": "战术", "style": "high-risk-tactical", "source": "manual", "holdingsStem": "tactical-holdings", "strategyFile": "tactical-strategy.md" },
+        { "id": "agentic", "label": "实验账户", "short": "实验", "style": "agentic-experimental", "source": "manual", "holdingsStem": "agentic-holdings", "strategyFile": "agentic-strategy.md" }
+      ]
+    },
+    {
+      "id": "chatgpt",
+      "label": "对照台",
+      "kicker": "只读对照",
+      "subtitle": "本地示例配置",
+      "writable": false,
+      "vault": "chatgpt",
+      "accounts": [
+        { "id": "main", "label": "主账户", "short": "主账户", "style": "core-long", "source": "manual", "holdingsStem": "compare-main", "strategyFile": "main-strategy.md" },
+        { "id": "tactical", "label": "战术账户", "short": "战术", "style": "high-risk-tactical", "source": "manual", "holdingsStem": "compare-tactical", "strategyFile": "tactical-strategy.md" },
+        { "id": "agentic", "label": "实验账户", "short": "实验", "style": "agentic-experimental", "source": "manual", "holdingsStem": "compare-agentic", "strategyFile": "agentic-strategy.md" }
+      ]
+    }
+  ],
+  "compare": { "accounts": [] },
+  "lists": { "primary": [], "tactical": [], "highBeta": [] },
+  "focusTape": []
+}

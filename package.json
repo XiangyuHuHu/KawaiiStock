@@ -1,0 +1,21 @@
+{
+  "name": "kawaii-agentic-research-desk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "validate:strategy": "node scripts/validate-strategy.js",
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "seed": "node scripts/seed-holdings.js",
+    "recs": "node --input-type=module -e \"import { buildRecommendations } from './src/recommend.js'; console.log(JSON.stringify(await buildRecommendations(), null, 2))\"",
+    "daily": "node scripts/daily.js",
+    "options": "node scripts/options.js --write",
+    "order": "node scripts/order.js",
+    "paper": "node scripts/paper.js"
+  },
+  "dependencies": {
+    "qimen-dunjia": "3.1.0"
+  }
+}

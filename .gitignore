@@ -1,0 +1,15 @@
+node_modules/
+.env*
+!.env.options.example
+*.log
+.DS_Store
+Thumbs.db
+.cursor/
+.playwright-cli/
+data/*
+!data/accounts.example.json
+reports/*
+!reports/.gitkeep
+docker-compose.yml
+STRATEGY-UPGRADE.md
+/*.txt

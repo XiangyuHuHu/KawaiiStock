@@ -1,0 +1,581 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Kawaii Research · Grok / ChatGPT</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/poster.css" />
+  </head>
+  <body>
+    <div class="chrome">
+      <header class="masthead">
+        <div class="brand">
+          <p class="brand-kicker" id="brandKicker">Kawaii Research Desk</p>
+          <h1 id="brandTitle">Grok 三账户</h1>
+          <p class="brand-sub" id="brandSub">三账户都扫全部 list · 主账户手改 · 小账户扫描覆盖</p>
+        </div>
+        <div class="mast-meta">
+          <div><span>会话</span><strong id="clockEt">--</strong></div>
+          <div><span>北京</span><strong id="clockBj">--</strong></div>
+          <div><span>推荐日</span><strong id="reportDate">--</strong></div>
+        </div>
+        <div class="stance-pill" id="stancePill">WAIT</div>
+        <div class="mast-refresh">
+          <button type="button" id="refreshAllBtn">一键更新</button>
+          <p id="refreshAllStatus">全部：推荐 / 模拟结算 / 今日买卖 / 价位图 / 期权 / 观察 / 算卦 / Agentic意见 / 纸上实验</p>
+        </div>
+      </header>
+      <div class="desk-bar" id="deskBar"></div>
+      <div class="account-bar" id="accountBar"></div>
+      <nav class="tabs" aria-label="分析台分区">
+        <button type="button" class="tab is-active" data-tab="overview">总览</button>
+        <button type="button" class="tab" data-tab="book">持仓</button>
+        <button type="button" class="tab" data-tab="guards">止损</button>
+        <button type="button" class="tab" data-tab="recs">推荐操作</button>
+        <button type="button" class="tab" data-tab="universe">观察池</button>
+        <button type="button" class="tab" data-tab="watch">每日观察</button>
+        <button type="button" class="tab" data-tab="reports">叙事日报</button>
+        <button type="button" class="tab" data-tab="strategy">策略</button>
+        <button type="button" class="tab" data-tab="options">期权</button>
+        <button type="button" class="tab" data-tab="oracle">算卦</button>
+        <button type="button" class="tab" data-tab="compare">对比</button>
+        <button type="button" class="tab" data-tab="sim">模拟操作</button>
+        <button type="button" class="tab" data-tab="paper">纸上实验</button>
+        <button type="button" class="tab" data-tab="actuals">实际操作</button>
+        <button type="button" class="tab" data-tab="review">复盘</button>
+      </nav>
+    </div>
+
+    <main class="paper">
+      <section class="strip" id="summaryStrip"></section>
+      <p class="status-line" id="statusLine">正在载入三账户账本。</p>
+
+      <section class="tab-panel is-active" id="panel-overview">
+        <article class="sheet brief-sheet">
+          <div class="sheet-head">
+            <div>
+              <p class="kicker">Agentic Brief</p>
+              <h2 id="briefHeadline">Agentic 操作意见</h2>
+              <p class="muted">把每日观察、算卦、期权和当日推荐收成一份意见。不是下单，不进推荐 / 模拟 / 实际操作。</p>
+            </div>
+            <div class="head-actions">
+              <button type="button" class="text-btn" id="briefRefreshBtn">按已保存结果重算</button>
+            </div>
+          </div>
+          <p class="status-line" id="briefStatus">正在读取 Agentic 操作意见。</p>
+          <div id="briefBody"></div>
+        </article>
+        <article class="sheet tradable-sheet">
+          <div class="sheet-head">
+            <div>
+              <p class="kicker">Today's Trades</p>
+              <h2>今日买卖</h2>
+              <p class="muted">综合持仓、推荐、价位图。只出已持仓上的买/卖价和量。草稿，不是下单，不进模拟仓。</p>
+            </div>
+            <div class="head-actions">
+              <button type="button" class="text-btn" id="tradableRefreshBtn">刷新</button>
+              <button type="button" class="text-btn" id="tradableWriteBtn">写入今日买卖文件夹</button>
+            </div>
+          </div>
+          <p class="status-line" id="tradableStatus">正在按现价和支撑阻力算可执行草稿。</p>
+          <div class="table-wrap" id="tradableTable"></div>
+          <p class="muted">点一行看该股日线详细分析。价位来自摆动点 / 密集区 / EMA，不是支撑 ±5%–10%。</p>
+          <div class="poster-frame" id="tradableFrame"></div>
+        </article>
+        <div class="layout-overview">
+          <article class="sheet call-sheet">
+            <p class="kicker">Today's Call</p>
+            <h2 id="headline">载入中</h2>
+            <ol class="action-list" id="actionList"></ol>
+          </article>
+          <aside class="sheet risk-sheet">
+            <p class="kicker">Risk Budget</p>
+            <h2>风险框</h2>
+            <dl class="risk-dl" id="riskDl"></dl>
+          </aside>
+        </div>
+        <section class="sheet">
+          <div class="sheet-head">
+            <div>
+              <p class="kicker">Focus Tape</p>
+              <h2>观察带</h2>
+            </div>
+            <p class="muted">持仓代码优先，其次全 list 样本。三账户都能看；不是下单指令。</p>
+          </div>
+          <div class="tape" id="focusTape"></div>
+        </section>
+        <section class="sheet" id="eventStrip" hidden></section>
+      </section>
+
+      <section class="tab-panel" id="panel-book" hidden>
+        <article class="sheet">
+          <div class="sheet-head">
+            <div>
+              <p class="kicker">Positions</p>
+              <h2 id="bookTitle">持仓</h2>
+              <p class="muted" id="bookNote"></p>
+            </div>
+            <div class="head-actions">
+              <button type="button" class="text-btn" id="addRowBtn">增加一行</button>
+              <button type="button" class="text-btn" id="saveBookBtn">保存主账户</button>
+              <button type="button" class="text-btn" id="posterLoadBtn">本账户价位图</button>
+              <button type="button" class="text-btn" id="posterWriteBtn">写入价位图</button>
+            </div>
+          </div>
+          <section id="bookUpdates" aria-label="ChatGPT 每日更新去向" hidden></section>
+          <div class="table-wrap" id="positionTable"></div>
+          <p class="status-line" id="posterStatus"></p>
+          <div class="poster-chips" id="posterChips"></div>
+          <div id="posterOverview"></div>
+          <div class="poster-frame" id="posterFrame"></div>
+        </article>
+        <article class="sheet" id="scanSheet">
+          <p class="kicker">Robinhood Scan</p>
+          <h2>覆盖小账户持仓</h2>
+          <p class="muted">两个小账户接受扫描 JSON。主账户走上面的手改保存。接口失败时会写明缺数据，不会把昨日持仓改标成今日实时。</p>
+          <textarea id="scanInput" rows="8" placeholder='{"asOf":"2026-08-25T10:00:00-04:00","cash":1200,"positions":[{"symbol":"MRVL","qty":30,"avgCost":210}]}'></textarea>
+          <button type="button" class="text-btn" id="applyScanBtn">应用扫描</button>
+          <p class="muted" id="scanStatus"></p>
+        </article>
+      </section>
+
+      <section class="tab-panel" id="panel-guards" hidden>
+        <p class="sim-banner">止损必须及时 · 未成交 GTC 不是成交 · 战术 / Agentic 看券商侧止损 · 主账户无接口 · 不是下单</p>
+        <section class="strip" id="guardStrip"></section>
+        <article class="sheet">
+          <div class="sheet-head">
+            <div>
+              <p class="kicker">Stops</p>
+              <h2>止损 / 未完成订单</h2>
+              <p class="muted">对照现价、推荐失效价、Robinhood 未完成订单。缺止损会标出来。草稿，不写进推荐/模拟/实际操作。</p>
+            </div>
+            <div class="head-actions">
+              <button type="button" class="text-btn" id="guardRefreshBtn">刷新</button>
+            </div>
+          </div>
+          <p class="status-line" id="guardStatus">打开后核对战术和 Agentic 的止损。</p>
+          <div class="table-wrap" id="guardTable"></div>
+          <h3 class="option-skip-title">未完成订单</h3>
+          <div class="table-wrap" id="guardOrders"></div>
+          <h3 class="option-skip-title">持仓已空、订单还挂着</h3>
+          <div class="table-wrap" id="guardOrphans"></div>
+          <div id="guardEvents"></div>
+        </article>
+      </section>
+
+      <section class="tab-panel" id="panel-recs" hidden>
+        <article class="sheet">
+          <div class="sheet-head">
+            <div>
+              <p class="kicker">Recommendations</p>
+              <h2>推荐操作</h2>
+            </div>
+            <div class="head-actions">
+              <button type="button" class="text-btn" id="runDailyBtn">跑每日流水</button>
+              <button type="button" class="text-btn" id="runRecsBtn">只生成推荐操作</button>
+            </div>
+          </div>
+          <p class="muted" id="recStatus"></p>
+          <div class="layout-reports">
+            <aside class="report-index" id="recIndex"></aside>
+            <div class="report-body" id="recBody"></div>
+          </div>
+        </article>
+      </section>
+
+      <section class="tab-panel" id="panel-universe" hidden>
+        <article class="sheet">
+          <div class="sheet-head">
+            <div>
+              <p class="kicker">Watchlists</p>
+              <h2 id="screenerTitle">观察池估值筛选</h2>
+              <p class="muted" id="screenerSub">点一行打开详情：估值 + 价格周期 + 价位图。不是目标价，也不是下单。</p>
+            </div>
+            <div class="head-actions">
+              <div class="market-switch" id="screenerMarket"></div>
+              <button type="button" class="text-btn" id="screenerSaveBtn">保存筛选</button>
+              <button type="button" class="text-btn" id="screenerRefreshBtn">刷新</button>
+            </div>
+          </div>
+          <div id="universeWatchStrip" class="universe-watch-strip"></div>
+          <div class="list-pills" id="listPills"></div>
+          <p class="muted" id="screenerMethod"></p>
+          <div class="preset-row" id="screenerPresets"></div>
+          <p class="muted" id="screenerPresetNote"></p>
+          <div class="screener-toolbar">
+            <form id="screenerSearchForm">
+              <input id="screenerSearch" type="search" placeholder="搜索代码或公司，完整代码回车可跳页" />
+            </form>
+            <label>排序
+              <select id="screenerSort">
+                <option value="sourceOrder:asc">List 原顺序</option>
+                <option value="opportunityScore:desc">机会评分最高</option>
+                <option value="marginOfSafety:desc">安全边际最高</option>
+                <option value="qualityScore:desc">质量评分最高</option>
+                <option value="dailyChange:asc">今日跌幅最大</option>
+              </select>
+            </label>
+            <button type="button" class="text-btn" id="screenerModeledBtn">仅看有估值</button>
+            <label>每页
+              <select id="screenerPageSize">
+                <option value="12">12</option>
+                <option value="25">25</option>
+              </select>
+            </label>
+          </div>
+          <p class="muted" id="screenerStatus"></p>
+          <div class="table-wrap" id="universeTable">正在读取观察池。</div>
+          <div class="screener-pager" id="screenerPager"></div>
+        </article>
+      </section>
+
+      <section class="tab-panel" id="panel-watch" hidden>
+        <article class="watch-board" id="watchBoard">
+          <div class="watch-head">
+            <div>
+              <p class="watch-kicker" id="watchKicker">Daily Watchlist · Cycle of Price Action</p>
+              <h2 id="watchTitle">每日观察</h2>
+              <p class="watch-sub" id="watchSub">美股看 Cycle 最可能涨 / 跌。点卡片打开详情。足迹不是预测，不是下单。</p>
+            </div>
+            <div class="watch-meta" id="watchMeta"></div>
+            <div class="head-actions">
+              <div class="market-switch" id="watchMarket">
+                <button type="button" class="is-active" data-watch-market="us">美股</button>
+                <button type="button" data-watch-market="cn">A股</button>
+              </div>
+              <button type="button" class="text-btn" id="watchRefreshBtn">手动更新</button>
+            </div>
+          </div>
+          <div id="watchFreshness"></div>
+          <p class="status-line" id="watchStatus" role="status" aria-live="polite">读取已保存的观察板；自动任务未更新时，可点「手动更新」重新扫描并保存。</p>
+          <div class="watch-layout">
+            <div class="watch-grid" id="watchGrid"></div>
+            <aside class="watch-side" id="watchSide"></aside>
+          </div>
+        </article>
+      </section>
+
+      <section class="tab-panel" id="panel-reports" hidden>
+        <div class="sheet-head">
+          <p class="muted">自动任务未更新时，可手动更新 Agentic 账户快照。持仓来源未更新会继续标为非实时；Council 长叙事由扫描 Agent 补写。</p>
+          <button type="button" class="text-btn" id="reportRefreshBtn">手动更新</button>
+        </div>
+        <p class="status-line" id="reportStatus" role="status" aria-live="polite">正在读取已保存的叙事日报。</p>
+        <div class="layout-reports">
+          <aside class="sheet report-index">
+            <p class="kicker">Archive</p>
+            <h2>Agentic 叙事日报</h2>
+            <p class="muted">实盘 Agentic（••••7983）日记，不是纸上 0C。引擎每日写账户快照；Council 长叙事由扫描 Agent 补写。买卖看「推荐操作 / 模拟操作 / 实际操作」。</p>
+            <div id="reportIndex"></div>
+          </aside>
+          <article class="sheet report-body" id="reportBody"></article>
+        </div>
+      </section>
+
+      <section class="tab-panel" id="panel-strategy" hidden>
+        <article class="sheet strategy-body" id="strategyBody">正在读取策略。</article>
+      </section>
+
+      <section class="tab-panel" id="panel-options" hidden>
+        <article class="sheet options-workspace">
+          <div class="sheet-head"><div><p class="kicker">Options · Read-only research</p><h2>期权研究</h2><p class="muted">先核实报价，再比较净成本与风险。只读、不下单，不写入推荐操作 / 模拟操作 / 实际操作。</p></div>
+            <div class="head-actions"><label>策略 <select id="optionStrategy"></select></label><button type="button" class="text-btn" id="optionRefreshBtn">重新扫描</button><button type="button" class="text-btn" id="optionWriteBtn" disabled>保存本次扫描</button></div></div>
+          <div class="option-controls"><label>手续费 / 每腿每次（USD）<input id="optionFee" type="number" min="0" max="100" step="0.01" value="0"></label><label>单个组合风险预算（USD）<input id="optionBudget" type="number" min="0" step="1" placeholder="未填写：不计算数量"></label><p class="muted">Robinhood 股票期权佣金按 $0 计；其他券商请改数字后重新扫描。Yahoo/Nasdaq 不提供每腿买卖盘时间，所以不能把免费源扫描当作买入指令。数量仅为预算上限。</p></div>
+          <div class="option-controls"><label>历史扫描（观察日按美东日期）<select id="optionHistory"><option value="">最新已保存扫描</option></select></label><p class="muted" id="optionHistoryStatus">读取历史列表中…</p></div>
+          <p id="optionStatus" class="status-line" role="status" aria-live="polite">正在读取扫描记录。</p>
+          <div id="optionFreshness"></div><details class="option-source-details"><summary>行情来源与数据缺口</summary><div id="optionSources"></div></details><div id="optionSummary"></div>
+          <section id="optionRecommendations" class="option-recommendations" aria-label="推荐买入候选"></section>
+          <div class="option-controls"><label>搜索标的 <input id="optionSearch" type="search" placeholder="代码或名称"></label><label>状态 <select id="optionFilter"><option value="all">全部扫描</option><option value="eligible">推荐买入候选</option><option value="blocked">受阻 / 观察</option></select></label><label>排序 <select id="optionSort"><option value="status">可研究优先</option><option value="ev">净 EV / 风险</option><option value="risk">每组最大损失</option></select></label></div>
+          <div class="option-work-grid"><div class="table-wrap" id="optionScanTable"></div><aside id="optionDetail" tabindex="-1" aria-label="合约研究详情"></aside></div>
+          <section class="option-forward"><div class="sheet-head"><h3>同合约前向复盘 · 尚需真实报价验证</h3><button id="optionCollectorBtn" type="button" class="text-btn">自动采集状态读取中</button><button id="optionForwardBtn" type="button" class="text-btn">刷新合约复盘</button></div><div id="optionCollectorStatus" role="status"></div><div id="optionForward"></div></section>
+          <section class="option-forward"><h3>当前所选扫描 · 原推荐与同合约结果对照</h3><div id="optionComparison" class="table-wrap"></div></section>
+          <details class="option-aux"><summary>辅助复盘：股票次日方向（不代表期权收益）</summary><div id="optionScore"></div></details>
+        </article>
+      </section>
+      <section class="tab-panel" id="panel-oracle" hidden>
+        <p class="sim-banner">卦象观察 · 娱乐解读，未经股价预测验证 · 不下单 · 不进推荐 / 模拟 / 实际操作</p>
+        <article class="sheet oracle-workspace">
+          <div class="sheet-head">
+            <div>
+              <p class="kicker">Oracle · Daily watch</p>
+              <h2>卦象涨跌观察</h2>
+              <p class="muted">逐个标的展示偏涨、偏跌与分歧。根据卦象分类，实际涨跌仍需市场验证；同日刷新不随机换卦。</p>
+            </div>
+            <div class="head-actions">
+              <label>市场 <select id="oracleMarket"><option value="us">美股 · 美东时间</option><option value="cn">A 股 · 北京时间</option></select></label>
+              <label>观察日 <input id="oracleDate" type="date"></label>
+              <button type="button" class="text-btn" id="oracleTodayBtn">回到今日</button>
+              <button type="button" class="text-btn" id="oracleRefreshBtn">手动刷新卦象与对照</button>
+            </div>
+          </div>
+          <p id="oracleStatus" class="status-line" role="status">打开后读取观察池并生成每日卦象。</p>
+          <section id="oracleAccuracy" aria-label="卦象方向正确率" aria-live="polite"></section>
+          <div id="oracleSymbols"></div>
+          <details class="oracle-method"><summary>起卦方法、分组规则与参考资料</summary><div id="oracleMethod"></div></details>
+          <div id="oracleQimenWrap"><div class="sheet-head"><div><p class="kicker">Qimen · Current chart</p><h3>奇门九宫与分时验证</h3><p class="muted">按当前时间起九宫盘，覆盖跨资产 ETF、美股与 A 股观察池；手工历史盘另行查看。</p></div><div class="head-actions"><label>模式 <select id="oracleQimenMode"><option value="current">当前自动盘</option><option value="history">手工历史盘 · SPX</option></select></label><select id="oracleQimenScope" aria-label="奇门观察范围"><option value="all">全部 · ETF / 美股 / A 股</option><option value="us">ETF 与美股</option><option value="cn">A 股观察池</option></select><label>历史盘面日 <input id="oracleQimenDate" type="date"></label><label>已录入 <select id="oracleRecorded"><option value="">选择日期</option></select></label><button type="button" class="text-btn" id="oracleQimenToday">回到当前盘</button><button type="button" class="text-btn" id="oracleQimenRefresh">按当前时间刷新九宫</button><button type="button" class="text-btn" id="oracleWriteBtn">保存奇门对照</button></div></div>
+          <p id="oracleQimenStatus" class="status-line" role="status">独立加载当前九宫；同小时重算可能同盘，显示实际刷新时间。</p>
+          <div id="oracleFreshness"></div>
+          <div id="oracleVerdict"></div>
+          <div class="oracle-grid">
+            <div id="oraclePalaces"></div>
+            <aside id="oracleNotes"></aside>
+          </div>
+          <div id="oraclePath"></div>
+          <div class="table-wrap" id="oraclePhases"></div>
+          </div>
+        </article>
+      </section>
+      <section class="tab-panel" id="panel-compare" hidden>
+        <section class="strip" id="compareStrip"></section>
+        <p class="status-line" id="compareStatus">Grok 独立规则 vs ChatGPT 手册。不是「Grok 是 ChatGPT 压缩版」。同时看规则差和持仓重合。</p>
+        <div class="account-bar compare-account-bar" id="compareAccountBar"></div>
+        <article class="sheet">
+          <div class="sheet-head">
+            <div>
+              <p class="kicker">Rules</p>
+              <h2 id="compareTitle">规则对照</h2>
+            </div>
+          </div>
+          <div class="table-wrap" id="compareRules"></div>
+        </article>
+        <div class="compare-split">
+          <article class="sheet">
+            <p class="kicker">ChatGPT</p>
+            <h2>对照账本</h2>
+            <p class="muted" id="compareGptNote"></p>
+            <div class="table-wrap" id="compareGptBook"></div>
+          </article>
+          <article class="sheet">
+            <p class="kicker">Grok</p>
+            <h2>执行账本</h2>
+            <p class="muted" id="compareGrokNote"></p>
+            <div class="table-wrap" id="compareGrokBook"></div>
+          </article>
+        </div>
+        <article class="sheet">
+          <p class="kicker">Overlap</p>
+          <h2>持仓重合</h2>
+          <p class="muted">两边都有、仅 ChatGPT、仅 Grok。数量不同会标出来。</p>
+          <div class="table-wrap" id="compareOverlap"></div>
+        </article>
+      </section>
+
+      <section class="tab-panel" id="panel-sim" hidden>
+        <p class="sim-banner">纸上对照 · <code>live_trading=false</code> · BUY/ADD 按目标权重每日建仓，下一交易日开盘 + 5bp · 缺文件不编造 · EXIT/SELL 全卖，TRIM 减半 · HOLD / WATCH / REVIEW / 期权不成交 · 不下真实单</p>
+        <section class="sim-freshness" aria-label="ChatGPT 数据时效">
+          <p id="simObservationDate" class="muted">正在检查当前观察日和来源日期…</p>
+          <div id="simFreshnessBanner" class="sim-stale-banner" role="status" aria-live="polite">非实时 · 来源日期尚未核验</div>
+          <dl id="simSourceDates" class="sim-source-dates"></dl>
+        </section>
+        <section class="strip" id="simStrip"></section>
+        <p class="status-line" id="simStatus">模拟操作是跟推荐的纸上对照实验。缺文件仅保留持仓，不代表 HOLD 建议或当日更新。</p>
+        <div class="sheet-head sim-toolbar">
+          <div class="account-bar compare-account-bar" id="simAccountBar"></div>
+          <div class="head-actions">
+            <label class="sim-date-label">结算日
+              <input id="simDate" type="date" />
+            </label>
+            <button type="button" class="text-btn" id="simRunBtn">结算当日</button>
+            <button type="button" class="text-btn" id="simResetBtn">重置模拟操作</button>
+          </div>
+        </div>
+        <div class="table-wrap" id="simCompareTable"></div>
+        <div class="compare-split sim-split">
+          <article class="sheet" id="simGrokSheet">
+            <p class="kicker">Grok</p>
+            <h2>跟推荐操作走</h2>
+            <p class="muted" id="simGrokNote">依据 Grok 推荐操作 JSON。缺文件不计为当日更新，不编造买卖。</p>
+            <div id="simGrokBuild"></div>
+            <div class="sim-metrics" id="simGrokMetrics"></div>
+            <div id="simGrokSpark"></div>
+            <h3 id="simGrokFillsTitle">最近模拟记录的成交</h3>
+            <div class="table-wrap" id="simGrokFills"></div>
+            <h3>未跟单</h3>
+            <div class="table-wrap" id="simGrokSkips"></div>
+            <h3>模拟持仓</h3>
+            <div class="table-wrap" id="simGrokBook"></div>
+          </article>
+          <article class="sheet" id="simGptSheet">
+            <p class="kicker">ChatGPT</p>
+            <h2>跟推荐操作走</h2>
+            <p class="muted" id="simGptNote">依据 ChatGPT 推荐操作 JSON。缺文件不代表 HOLD 建议或当日更新，不编造买卖。</p>
+            <div id="simGptBuild"></div>
+            <div class="sim-metrics" id="simGptMetrics"></div>
+            <div id="simGptSpark"></div>
+            <h3 id="simGptFillsTitle">最近模拟记录的成交</h3>
+            <div class="table-wrap" id="simGptFills"></div>
+            <h3>未跟单</h3>
+            <div class="table-wrap" id="simGptSkips"></div>
+            <h3>模拟持仓</h3>
+            <div class="table-wrap" id="simGptBook"></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="tab-panel" id="panel-paper" hidden>
+        <p class="sim-banner">Phase 0 纸上实验 · 0A 财富、0B 进攻、0C Agentic 同一标的不重复 · 0D 算卦 $100k · 0E 期权 $100k · 0F Claude 动量 $100k · 0G 小孟A股 ¥10万 · 0H 小孟美股 $10万 · 不是实盘 · 不写「模拟操作」</p>
+        <div class="account-bar compare-account-bar" id="paperDeskBar"></div>
+        <section class="strip" id="paperStrip"></section>
+        <p class="status-line" id="paperStatus">正在读取纸上账本。</p>
+        <p class="status-line" id="paperRunSummary" role="status" hidden></p>
+        <article class="sheet">
+          <div class="sheet-head">
+            <div>
+              <p class="kicker">Paper Desk</p>
+              <h2>纸上实验仓</h2>
+              <p class="muted">默认不手操。0A $1M、0B $50k 没卖点就拿着。0C $5k 没有 A 级就空仓。0D 偏涨试买，当日判断为跌并且有持仓就卖。0E 单腿按 1 张买，跌 20% 平仓；还在推荐里就拿着，离开推荐并且涨了 40% 才止盈。0F 全 list 按 6 个月涨幅÷波动排名，大盘在 200 日线上才买，3×ATR 吊灯止损，跌破 100 日线或掉出前 20 名就卖。点击按钮或运行每日流水才触发纸上过闸；本站没有独立定时器（每日任务北京 22:45）。只在美东 9:30–16:00 下自动单，其他时间只按日线最低价回放券商止损。0A–0C 同一标的只进一本。</p>
+            </div>
+            <div class="head-actions">
+              <button type="button" class="text-btn" id="paperRefreshBtn">刷新</button>
+              <button type="button" class="text-btn" id="paperAutoBtn">马上自动跑一趟</button>
+              <button type="button" class="text-btn" id="paperReduceBtn">只减仓</button>
+              <button type="button" class="text-btn" id="paperProtectBtn">保护</button>
+              <button type="button" class="text-btn" id="paperKillBtn">锁定</button>
+              <button type="button" class="text-btn" id="paperResumeBtn">人工恢复</button>
+              <button type="button" class="text-btn" id="paperResetBtn">重置空仓</button>
+            </div>
+          </div>
+          <form class="actual-form" id="paperForm">
+            <label>代码
+              <input id="paperSymbol" type="text" placeholder="TEM" required />
+            </label>
+            <label>方向
+              <select id="paperSide">
+                <option value="buy">买入</option>
+                <option value="sell">卖出</option>
+              </select>
+            </label>
+            <label>品种
+              <select id="paperInstrument">
+                <option value="equity">股票</option>
+                <option value="option" disabled>期权（仅 0E 合约自动过闸）</option>
+              </select>
+            </label>
+            <label>数量
+              <input id="paperQty" type="number" min="0" step="any" required />
+            </label>
+            <label>限价
+              <input id="paperLimit" type="number" min="0" step="any" />
+            </label>
+            <label>止损
+              <input id="paperStop" type="number" min="0" step="any" />
+            </label>
+            <label>最大亏损
+              <input id="paperMaxLoss" type="number" min="0" step="any" />
+            </label>
+            <label>主题
+              <input id="paperTheme" type="text" placeholder="ai / nuclear" />
+            </label>
+            <label class="wide">备注
+              <input id="paperNote" type="text" placeholder="可选" />
+            </label>
+            <div class="actual-form-actions">
+              <button type="submit" class="text-btn">过闸后记一笔</button>
+            </div>
+          </form>
+          <h3>纸上持仓</h3>
+          <div class="table-wrap" id="paperBook"></div>
+          <h3>最近成交</h3>
+          <p class="muted">时间是美东。买入和卖出都记在这里。持仓表的「卖出判断」用现价重算：跌破止损卖出，盈利达到倍数才减仓，没有卖点就继续拿。</p>
+          <div class="table-wrap" id="paperFills"></div>
+        </article>
+      </section>
+
+      <section class="tab-panel" id="panel-actuals" hidden>
+        <article class="sheet">
+          <div class="sheet-head">
+            <div>
+              <p class="kicker">Actuals</p>
+              <h2>实际操作</h2>
+              <p class="muted">只记 Robinhood 真实成交。战术 ••••3469 和 Agentic ••••7983 可扫描写入。主账户无接口，只能手改。草稿不记。</p>
+            </div>
+            <div class="head-actions">
+              <button type="button" class="text-btn" id="actualImportBtn">写入扫描成交</button>
+            </div>
+          </div>
+          <p class="status-line" id="actualStatus">按顾问分开档案。系统默认 live_trading=false。</p>
+          <form class="actual-form" id="actualForm">
+            <label>日期
+              <input id="actualDate" type="date" required />
+            </label>
+            <label>账户
+              <select id="actualAccount">
+                <option value="tactical">战术</option>
+                <option value="main">主账户</option>
+                <option value="agentic">Agentic</option>
+              </select>
+            </label>
+            <label>代码
+              <input id="actualSymbol" type="text" placeholder="NVDA" required />
+            </label>
+            <label>方向
+              <select id="actualSide">
+                <option value="BUY">买入</option>
+                <option value="SELL">卖出</option>
+                <option value="ADD">加仓</option>
+                <option value="TRIM">减仓</option>
+              </select>
+            </label>
+            <label>数量
+              <input id="actualQty" type="number" min="0" step="any" required />
+            </label>
+            <label>价格
+              <input id="actualPrice" type="number" min="0" step="any" required />
+            </label>
+            <label class="wide">备注
+              <input id="actualNote" type="text" placeholder="可选" />
+            </label>
+            <div class="actual-form-actions">
+              <button type="submit" class="text-btn" id="actualSaveBtn">追加一条</button>
+            </div>
+          </form>
+          <div class="layout-reports">
+            <aside class="report-index" id="actualIndex"></aside>
+            <div>
+              <div class="table-wrap" id="actualTable"></div>
+              <div class="report-body" id="actualBody"></div>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <section class="tab-panel" id="panel-review" hidden>
+        <p class="sim-banner">先看有没有执行 · 不看赚没赚 · HOLD / WATCH / REVIEW / 期权推荐不成交 · 不写进三本账</p>
+        <section class="strip" id="reviewStrip"></section>
+        <article class="sheet">
+          <div class="sheet-head">
+            <div>
+              <p class="kicker">Follow-through</p>
+              <h2>推荐 vs 模拟 vs 实际</h2>
+              <p class="muted">同一天、同一账户、同一代码、同一买卖方向。模拟跟推荐走；实际来自 Robinhood 成交。</p>
+            </div>
+            <div class="head-actions">
+              <button type="button" class="text-btn" id="reviewRefreshBtn">刷新</button>
+            </div>
+          </div>
+          <p class="status-line" id="reviewStatus">打开后对照三本账。</p>
+          <div class="layout-reports">
+            <aside class="report-index" id="reviewIndex"></aside>
+            <div>
+              <div class="table-wrap" id="reviewTable"></div>
+              <h3 class="option-skip-title">推荐没写、实际却成交</h3>
+              <div class="table-wrap" id="reviewExtras"></div>
+            </div>
+          </div>
+        </article>
+      </section>
+    </main>
+
+    <footer class="colophon">
+      <span id="colophonText">每日流水：真实持仓 → 推荐操作 → 模拟操作 → 实际操作。今日买卖 / 每日观察 / 算卦是独立草稿。默认不下单。</span>
+      <span id="generatedAt"></span>
+    </footer>
+    <div id="researchDrawer" class="drawer-layer" hidden></div>
+    <div id="screenerSaveDialog" class="drawer-layer" hidden></div>
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
