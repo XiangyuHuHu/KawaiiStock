@@ -1482,3 +1482,7 @@ body:has(#panel-oracle:not([hidden])) .masthead { padding-top: 14px; padding-bot
 @media (max-width: 980px) {
   .oracle-grid, .oracle-overview { grid-template-columns: 1fr; }
 }
+[data-wheel-root] { margin: 18px 0; }
+[data-wheel-root] small { display: block; margin-top: 4px; color: var(--muted); }
+[data-wheel-root] input { width: 96px; padding: 6px 8px; border: 1px solid var(--brass-dim); background: var(--paper); color: var(--ink); }
+.wheel-call { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }

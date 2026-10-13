@@ -16,6 +16,7 @@ import { freshnessFromContext } from '../risk/freshness.js';
 import { getStrategy, listStrategies } from './strategies.js';
 import { clearMarketCache, loadEarnings, loadBestChain, loadChart, loadExpirationChain, loadSentiment, loadVix, loadYahooQuote, mapPool, pickUnderlyingQuoteAt, vixValue } from './market.js';
 import { attachOptionScore, updateOptionScore } from './score.js';
+import { wheelCandidatesFromContexts } from './wheel.js';
 
 export { listStrategies };
 
@@ -260,6 +261,7 @@ export async function buildOptionsDesk({ date, strategyId = 'cov', deskId = 'gro
   const buySet = new Set(buys.map((row) => row.symbol));
   const skipped = ideas.filter((row) => !buySet.has(row.symbol));
   const tempting = skipped.filter((row) => row.tempting);
+  const wheelCandidates = wheelCandidatesFromContexts(contexts);
 
   return rememberScan(reassessOptions({
     ok: true,
@@ -287,6 +289,8 @@ export async function buildOptionsDesk({ date, strategyId = 'cov', deskId = 'gro
     buys,
     tempting,
     skipped,
+    wheelCandidates,
+    wheelNote: '纸上轮证候选，来自本次已加载的期权链。延迟/参考报价，不是下单。列出可卖出现金担保认沽的行权价、权利金、到期天数、收益率和盈亏平衡。股价下跌时亏损可以大于权利金。',
     counts: {
       buy: buys.length,
       tempting: tempting.length,
@@ -408,6 +412,14 @@ ${skipRows || '| — |  |  |  |  |  |  |  | 今日没有「看起来诱人但不
 | 代码 | 判定 | 看向 | Call/Put | 到期 | 行权价 | Bid / Ask | COV | EV | 数据 | 理由 |
 | --- | --- | --- | --- | --- | --- | --- | ---: | --- | --- | --- |
 ${scanRows || '| — |  |  |  |  |  |  |  |  | 还没扫描 |'}
+
+## 纸上轮证候选
+
+延迟/参考报价，不是下单。现金担保认沽锁定行权价×100。股价下跌时亏损可以大于权利金。
+
+| 代码 | 行权价 | 权利金 | DTE | 收益率 | 年化 | 盈亏平衡 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+${(pack.wheelCandidates || []).map((row) => `| ${row.symbol} | ${money(row.strike)} | ${money(row.premium)} | ${row.dte ?? '—'} | ${row.yield != null ? `${(row.yield * 100).toFixed(2)}%` : '—'} | ${row.annualizedYield != null ? `${(row.annualizedYield * 100).toFixed(1)}%` : '—'} | ${money(row.breakeven)} |`).join('\n') || '| — |  |  |  |  |  | 本次扫描没有符合 7–45 天、约 0.20–0.30 delta 或支撑下方的流动认沽 |'}
 
 ${details || '## 无买入候选\n\n今日无值得买入的期权 / NO TRADE。'}
 

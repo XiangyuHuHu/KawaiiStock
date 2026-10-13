@@ -290,6 +290,7 @@
           <div class="option-controls"><label>历史扫描（观察日按美东日期）<select id="optionHistory"><option value="">最新已保存扫描</option></select></label><p class="muted" id="optionHistoryStatus">读取历史列表中…</p></div>
           <p id="optionStatus" class="status-line" role="status" aria-live="polite">正在读取扫描记录。</p>
           <div id="optionFreshness"></div><details class="option-source-details"><summary>行情来源与数据缺口</summary><div id="optionSources"></div></details><div id="optionSummary"></div>
+          <section id="optionWheel" class="option-forward" data-wheel-root aria-label="纸上轮证"></section>
           <section id="optionRecommendations" class="option-recommendations" aria-label="推荐买入候选"></section>
           <div class="option-controls"><label>搜索标的 <input id="optionSearch" type="search" placeholder="代码或名称"></label><label>状态 <select id="optionFilter"><option value="all">全部扫描</option><option value="eligible">推荐买入候选</option><option value="blocked">受阻 / 观察</option></select></label><label>排序 <select id="optionSort"><option value="status">可研究优先</option><option value="ev">净 EV / 风险</option><option value="risk">每组最大损失</option></select></label></div>
           <div class="option-work-grid"><div class="table-wrap" id="optionScanTable"></div><aside id="optionDetail" tabindex="-1" aria-label="合约研究详情"></aside></div>
@@ -420,6 +421,7 @@
 
       <section class="tab-panel" id="panel-paper" hidden>
         <p class="sim-banner">Phase 0 纸上实验 · 0A 财富、0B 进攻、0C Agentic 同一标的不重复 · 0D 算卦 $100k · 0E 期权 $100k · 0F Claude 动量 $100k · 0G 小孟A股 ¥10万 · 0H 小孟美股 $10万 · 不是实盘 · 不写「模拟操作」</p>
+        <section id="paperWheel" class="sheet" data-wheel-root aria-label="纸上轮证"></section>
         <div class="account-bar compare-account-bar" id="paperDeskBar"></div>
         <section class="strip" id="paperStrip"></section>
         <p class="status-line" id="paperStatus">正在读取纸上账本。</p>

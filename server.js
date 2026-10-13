@@ -19,6 +19,7 @@ import { runDailyJob } from './src/daily.js';
 import { buildAccountPosters, buildSymbolPoster, posterPage, writePosters } from './src/posters.js';
 import { buildTradableDesk, writeTradable } from './src/tradable.js';
 import { buildOptionsDesk, listStrategies, loadOptionsFile, writeOptions, saveOptionsScan } from './src/options/engine.js';
+import { postWheel, readWheel } from './src/options/wheel-ledger.js';
 import { checkOrder, getRiskView, setKill, setMode } from './src/risk/service.js';
 import { getPaperView, listPaperViews, placePaperOrder, resetPaper } from './src/paper/desk.js';
 import { runPaperOpen } from './src/paper/auto.js';
@@ -357,6 +358,21 @@ const server = http.createServer(async (req, res) => {
       } else sendJson(res, 200, { ok: true, history: await listOptionsHistory(strategy) });
       return;
     }
+    if (url.pathname === '/api/options/wheel' && (req.method === 'GET' || req.method === 'POST')) {
+      try {
+        if (req.method === 'GET') {
+          const pack = await loadOptionsFile(url.searchParams.get('date') || undefined);
+          sendJson(res, 200, await readWheel({ candidates: pack?.wheelCandidates || [] }));
+          return;
+        }
+        const body = await readJsonBody(req);
+        const result = await postWheel(body);
+        sendJson(res, result.ok ? 200 : 400, result);
+      } catch (error) {
+        sendJson(res, 400, { ok: false, liveTrading: false, error: error.message || '轮证纸上账本失败' });
+      }
+      return;
+    }
     if (req.method === 'GET' && url.pathname === '/api/options/strategies') {
       sendJson(res, 200, { strategies: listStrategies(), defaultId: 'cov' });
       return;
@@ -411,6 +427,7 @@ const server = http.createServer(async (req, res) => {
         buys: [],
         tempting: [],
         ideas: [],
+        wheelCandidates: [],
         counts: { buy: 0, tempting: 0, noTrade: 0, scanned: 0 },
         note: '尚未扫描。点「扫描」才拉 5 分钟 K 线和期权链。草稿，不是下单。'
       });

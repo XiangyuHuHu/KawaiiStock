@@ -1,6 +1,7 @@
 import { ensureScreenerLoaded } from './screener.js';
 import { loadPosters, runPosters } from './poster.js';
 import { bindOptionsUi, loadOptionStrategies, loadOptions } from './options.js';
+import { bindWheelUi, loadWheel } from './wheel.js';
 import { bindOracleUi, loadOracle } from './oracle.js';
 import { bindPaperUi, loadPaper } from './paper.js';
 import { bindWatchUi, loadWatchlist } from './watchlist.js';
@@ -1273,10 +1274,13 @@ async function main() {
     setActiveTab(btn.dataset.tab);
     if (btn.dataset.tab === 'compare') loadCompare();
     if (btn.dataset.tab === 'sim') loadSim();
-    if (btn.dataset.tab === 'paper') loadPaper().catch((error) => {
-      const status = document.getElementById('paperStatus');
-      if (status) status.textContent = `纸上实验载入失败：${error.message}`;
-    });
+    if (btn.dataset.tab === 'paper') {
+      loadWheel().catch(() => {});
+      loadPaper().catch((error) => {
+        const status = document.getElementById('paperStatus');
+        if (status) status.textContent = `纸上实验载入失败：${error.message}`;
+      });
+    }
     if (btn.dataset.tab === 'actuals') loadActuals();
     if (btn.dataset.tab === 'reports') loadReports();
     if (btn.dataset.tab === 'guards') loadGuards().catch((error) => {
@@ -1336,6 +1340,8 @@ async function main() {
   document.getElementById('tradableRefreshBtn')?.addEventListener('click', () => loadTradable());
   document.getElementById('tradableWriteBtn')?.addEventListener('click', () => loadTradable({ write: true }));
   bindOptionsUi();
+  bindWheelUi();
+  loadWheel().catch(() => {});
   bindOracleUi();
   bindPaperUi();
   bindWatchUi();

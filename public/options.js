@@ -1,4 +1,5 @@
 import { referenceContract, actionLabel, assessment } from './options-display.js';
+import { loadWheel, setWheelCandidates } from './wheel.js';
 const $ = id => document.getElementById(id);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const money = value => value == null || !Number.isFinite(Number(value)) ? '—' : `$${Number(value).toFixed(2)}`;
@@ -218,6 +219,8 @@ export async function loadOptions({ refresh = false, write = false, historyKey =
       state.selected = data.historicalBuys?.[0]?.symbol || data.buys?.[0]?.symbol || data.ideas?.[0]?.symbol || null;
       if (!refresh) $('optionFee').value = data.costAssumptions?.feePerContract ?? 0;
       render();
+      setWheelCandidates(data.wheelCandidates || []);
+      loadWheel().catch(() => {});
       if (!refresh && !historyKey && !data.historicalView) refreshLiveQuotes();
       setStatus(data.historicalView
         ? '正在回看已保存历史扫描。原始推荐与价格保留，不是当前操作建议。'
