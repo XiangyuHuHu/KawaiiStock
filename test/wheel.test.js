@@ -119,6 +119,7 @@ test('assignment, covered call above cost, called away, and OTM roll', () => {
   assert.equal(opened.ledger.reservedCash, 10000);
   assert.equal(opened.ledger.cash, 100200);
   assert.equal(opened.ledger.positions.ACM.phase, 'short-put');
+  assert.ok(Math.abs(opened.ledger.positions.ACM.annualizedYield - (200 / 10000) * (365 / 30)) < 1e-9);
 
   const tooClose = openCoveredCall(opened.ledger, {
     symbol: 'ACM',

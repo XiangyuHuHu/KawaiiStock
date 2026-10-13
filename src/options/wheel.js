@@ -259,10 +259,18 @@ function normalizeSymbol(symbol) {
   return /^[A-Z][A-Z.]{0,4}$/.test(key) ? key : null;
 }
 
+function listedDays(row, asOf) {
+  const given = num(row.leg?.dte);
+  if (given > 0) return given;
+  if (row.leg?.expiration) return daysBetween(asOf, `${row.leg.expiration}T00:00:00.000Z`);
+  return 0;
+}
+
 function cycleAnnualized(row, asOf) {
   const capital = num(row.capitalAtRisk) || (num(row.costBasis) > 0 ? row.costBasis * CONTRACT_SHARES : 0);
   if (!(capital > 0) || !(row.premiumIncome > 0)) return null;
-  return (row.premiumIncome / capital) * (365 / daysBetween(row.openedAt, asOf));
+  const horizon = Math.max(daysBetween(row.openedAt, asOf), listedDays(row, asOf), 1);
+  return (row.premiumIncome / capital) * (365 / horizon);
 }
 
 function positionUnrealized(row, spot) {
@@ -514,6 +522,8 @@ export function bookPremiumYield(ledger, asOf = new Date().toISOString()) {
   const income = rows.reduce((sum, row) => sum + (num(row.premiumIncome) || 0), 0);
   const opened = rows.map((row) => Date.parse(row.openedAt)).filter((t) => Number.isFinite(t));
   if (!opened.length || !(ledger.seed > 0) || !(income > 0)) return null;
-  const days = Math.max(1, Math.round((Date.parse(asOf) - Math.min(...opened)) / 86400000));
-  return (income / ledger.seed) * (365 / days);
+  const elapsed = Math.max(1, Math.round((Date.parse(asOf) - Math.min(...opened)) / 86400000));
+  const listed = Object.values(ledger.positions || {}).map((row) => listedDays(row, asOf)).filter((n) => n > 0);
+  const horizon = Math.max(elapsed, listed.length ? Math.min(...listed) : 0, 1);
+  return (income / ledger.seed) * (365 / horizon);
 }
