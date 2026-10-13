@@ -725,12 +725,13 @@ function simBookTable(rows, emptyText) {
 }
 
 function simMetrics(summary) {
+  const unconfigured = summary?.returnStatus === 'not-configured' && !(summary?.startingNav > 0);
   return [
-    ['净值', money2(summary?.equity)],
-    ['现金', money2(summary?.cash)],
+    ['净值', unconfigured ? '不可计算 / 未配置' : money2(summary?.equity)],
+    ['现金', unconfigured ? '—' : money2(summary?.cash)],
     ['持仓数', summary?.positionCount ?? 0],
-    ['累计盈亏', money2(summary?.pnl)],
-    ['收益率', summary?.returnStatus === 'not-configured' || summary?.pnlPct == null ? '不可计算 / 未配置' : pct(summary?.pnlPct)]
+    ['累计盈亏', unconfigured ? '不可计算 / 未配置' : money2(summary?.pnl)],
+    ['收益率', unconfigured || summary?.pnlPct == null ? '不可计算 / 未配置' : pct(summary?.pnlPct)]
   ].map(([label, value]) => `<div><span>${label}</span><strong class="${signedClass(label.includes('盈亏') || label === '收益率' ? summary?.pnl : 0)}">${value}</strong></div>`).join('');
 }
 
@@ -744,7 +745,7 @@ function simQty(value) {
   return Number(value).toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
 }
 
-function renderSimBuild(prefix, build, accountId, today) {
+function renderSimBuild(prefix, build, accountId, today, books) {
   const el = document.getElementById(`${prefix}Build`);
   if (!el) return;
   const ids = accountId === 'all' ? ['main', 'tactical', 'agentic'] : [accountId];
@@ -755,6 +756,7 @@ function renderSimBuild(prefix, build, accountId, today) {
   el.innerHTML = ids.map((id) => {
     const card = build.accounts[id];
     if (!card) return '';
+    const unconfigured = books?.[id]?.returnStatus === 'not-configured';
     const when = !build.signalDate
       ? '缺推荐文件，不建仓'
       : (card.settled
@@ -771,7 +773,7 @@ function renderSimBuild(prefix, build, accountId, today) {
     return `<article class="sim-build">
       <h3>${card.label || id} · ${build.signalDate || '—'}</h3>
       <p class="sim-build-meta">${when}</p>
-      <p class="sim-build-meta">NAV ${money2(card.nav)} · 现金 ${card.cashPct ?? '—'}% · 持仓 ${card.positionCount ?? 0} · ${card.phase || '—'}</p>
+      <p class="sim-build-meta">${unconfigured ? 'NAV 不可计算 / 未配置 · 现金 — · 起始资金未设置' : `NAV ${money2(card.nav)} · 现金 ${card.cashPct ?? '—'}% · 持仓 ${card.positionCount ?? 0} · ${card.phase || '—'}`}</p>
       <h4>Actions</h4>
       ${actions}
       <h4>Pending T+1</h4>
@@ -782,7 +784,7 @@ function renderSimBuild(prefix, build, accountId, today) {
 }
 
 function renderSimSide(prefix, ledger, day, summary, accountId, today) {
-  renderSimBuild(prefix, ledger?.build, accountId, today);
+  renderSimBuild(prefix, ledger?.build, accountId, today, ledger?.accounts);
   document.getElementById(`${prefix}Note`).textContent = `${day?.date ? `展示 ${day.date} 的模拟记录。` : '尚无模拟记录。'}仅按已有推荐 JSON 模拟；缺文件不代表 HOLD 建议或当日更新。不下真实单。`;
   document.getElementById(`${prefix}FillsTitle`).textContent = day?.date ? `模拟成交 · ${day.date}` : '模拟成交 · 尚未结算';
   document.getElementById(`${prefix}Metrics`).innerHTML = simMetrics(summary);
