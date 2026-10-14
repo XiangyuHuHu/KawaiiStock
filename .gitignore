@@ -14,3 +14,6 @@ reports/*
 docker-compose.yml
 STRATEGY-UPGRADE.md
 /*.txt
+/forum-scan/prefetch/
+/forum-scan/state/
+/overheard-*.md
