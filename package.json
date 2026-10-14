@@ -17,7 +17,8 @@
     "bot:heartbeat": "node scripts/bot-heartbeat.js",
     "bot:list-summary": "node scripts/bot-list-summary.js",
     "bot:options-prefilter": "node scripts/bot-options-prefilter.js",
-    "bot:forum-prefetch": "node scripts/forum-prefetch.js"
+    "bot:forum-prefetch": "node scripts/forum-prefetch.js",
+    "bot:forum-aggregate": "node scripts/forum-aggregate.js"
   },
   "dependencies": {
     "qimen-dunjia": "3.1.0"

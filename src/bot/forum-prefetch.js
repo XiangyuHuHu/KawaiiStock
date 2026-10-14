@@ -131,6 +131,8 @@ export function eventItems(dump) {
       date: /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null,
       eventKind,
       title,
+      source: clean(row.source || '') || null,
+      url: clean(row.url || '') || null,
       fingerprint,
       wakes: true
     };
@@ -174,7 +176,8 @@ export async function runForumPrefetch({
   now = new Date(),
   readmeText = '',
   quoteBandPct = 1,
-  wakeKinds = WAKE_KINDS
+  wakeKinds = WAKE_KINDS,
+  extraKnown = []
 } = {}) {
   const stamp = now instanceof Date ? now : new Date(now);
   const iso = stamp.toISOString();
@@ -196,6 +199,9 @@ export async function runForumPrefetch({
   const seen = await readJson(files.seen) || emptySeen(iso);
   if (!seen.fingerprints || typeof seen.fingerprints !== 'object') seen.fingerprints = {};
   const known = new Set(Object.keys(seen.fingerprints));
+  for (const fingerprint of extraKnown || []) {
+    if (fingerprint) known.add(String(fingerprint));
+  }
   const wake = new Set(wakeKinds);
   const fresh = [...newsList, ...eventList, ...quotesList].filter((row) => !known.has(row.fingerprint));
   for (const row of quotesList) {

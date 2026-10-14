@@ -16,4 +16,5 @@ STRATEGY-UPGRADE.md
 /*.txt
 /forum-scan/prefetch/
 /forum-scan/state/
+/stock-playbook/state/
 /overheard-*.md

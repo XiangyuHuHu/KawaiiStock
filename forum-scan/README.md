@@ -56,3 +56,29 @@ node scripts/forum-prefetch.js --ack ack.json
 脚本不调用 X，也不调用券商。它只从本地 dump 复制这些字段：`id`、`author`、`text`、`url`、`createdAt`、`symbols`，以及行情的 `symbol` / `last` / `changePct`，事件的 `symbol` / `date` / `kind` / `title`。不要把密钥放进 dump。
 
 prefetch JSON 带 `liveTrading: false`。这个流程不下一单。
+
+## 预聚合：安静扫描不要再上网
+
+模型不要自己搜 X、新闻、财报日历或 EDGAR。先跑：
+
+```bash
+node scripts/forum-aggregate.js --watchlist watch.json --exit-code
+```
+
+观察列表没有单独文件时，脚本会读 `/workspace/forum-scan/state/watchlist.json`，再退回 `docs/us-forum-watchlist.example.json`。`--x-news` 是本地 X dump。新闻正文来自观察列表 cashtag 的 Yahoo RSS，不调用需要密钥的 X 接口。
+
+然后只读这一份：
+
+- `/workspace/forum-scan/state/aggregate.json`
+- 同一份也写到 `/workspace/stock-playbook/state/aggregate.json`
+
+`silent: true` 或 `no_change: true`：这些指纹已经出现在 `/workspace/overheard-*.md` 的 `fp:` 里。直接结束。不要呼叫模型，不要做网页检索，不要分类 A/B。
+
+`silent: false`：只对 `newFingerprints` 里的条目分 A 或 B，然后 `--ack`。不要把已经在账本里的条目再判一遍。
+
+14 日盘前清单写在：
+
+- `/workspace/forum-scan/state/us-forum-event-checklist.json`
+- `/workspace/stock-playbook/state/us-forum-event-checklist.json`
+
+窗口按美东日历。未来 14 天是观察列表上的财报；回看 14 天是 Form 4 和 8-K。报价是 Yahoo 公开行情，并尽量合并一次无鉴权的 Robinhood 报价。Robinhood 失败就只留 Yahoo。脚本不读 token，也不下单。报价跳动仍然不唤醒。

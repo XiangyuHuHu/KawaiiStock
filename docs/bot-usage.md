@@ -11,7 +11,7 @@
 | 午间 :25 / :55，以及任何持仓决策环 | `node scripts/bot-heartbeat.js --input snapshot.json --routine midday-7983 --exit-code` | `no_change: true` | 把 `wakes` 交给模型。进入止损唤醒区时每次都醒 |
 | 每小时名单 | `node scripts/bot-list-summary.js --scan scan.json --exit-code` | `text` 为 `NO_CHANGE` | 原样转发 `text`，不要再让模型翻译升/降/异动 |
 | 7983 短周期权，约每 15 分钟 | `node scripts/bot-options-prefilter.js --chain chain.json --exit-code` | `no_change: true` | 模型只确认 `candidates`。下单仍由 connector 执行 |
-| 论坛扫描 | `node scripts/forum-prefetch.js --quotes q.json --x-news x.json --events e.json --exit-code` | `state/gate.json` 的 `silent: true` | 只给新指纹分 A/B，然后 `--ack`。见 [forum-scan-prefetch.md](forum-scan-prefetch.md) |
+| 论坛扫描 | `node scripts/forum-aggregate.js --watchlist watch.json --exit-code` | `aggregate.json` 的 `silent: true` | 只给相对 overheard 账本的新指纹分 A/B。见 [forum-scan-prefetch.md](forum-scan-prefetch.md) |
 
 `no_change: true` 或 `silent: true` 时：不要呼叫模型，不要发帖，不要写分类。
 
@@ -76,4 +76,6 @@
 
 ## 论坛扫描
 
-盒子上的绝对路径、指纹和 overheard 账本见 [forum-scan-prefetch.md](forum-scan-prefetch.md)。论坛没有单独的仓库，脚本放在这里，跑起来写到 `/workspace/forum-scan/`。
+盒子上的绝对路径、指纹和 overheard 账本见 [forum-scan-prefetch.md](forum-scan-prefetch.md)。论坛没有单独的仓库，脚本放在这里。
+
+安静扫描先跑 `node scripts/forum-aggregate.js`。它会写 cashtag/关键词新闻、Yahoo 与无鉴权 Robinhood 报价，以及 14 日财报和 EDGAR Form 4 / 8-K 清单。清单文件是 `us-forum-event-checklist.json`，放在 `/workspace/forum-scan/state/` 和 `/workspace/stock-playbook/state/`。`silent: true` 表示指纹已经在 overheard 账本里，不要再让模型上网，也不要分 A/B。
