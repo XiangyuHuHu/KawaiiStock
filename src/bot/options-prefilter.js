@@ -1,5 +1,6 @@
 import { daysBetween } from '../options/math.js';
 import { todayStamp } from '../paths.js';
+import { stableHash } from '../bot/hash.js';
 
 export const OPTIONS_PREFILTER_DEFAULTS = {
   minDte: 2,
@@ -119,10 +120,27 @@ export function prefilterOptions(dump = {}, caps = {}) {
     });
   }
   candidates.sort((a, b) => a.symbol.localeCompare(b.symbol) || String(a.expiration).localeCompare(String(b.expiration)) || a.strike - b.strike || a.type.localeCompare(b.type));
+  const book = optionBook(dump);
+  const explicitTriggers = asArray(dump.triggers);
+  const trigger = candidates.length > 0 || explicitTriggers.length > 0 || dump.trigger === true;
+  const fingerprint = stableHash({
+    book: book.map(optionIdentity),
+    triggers: [...candidates, ...explicitTriggers].map(optionIdentity)
+  });
+  const previous = opts.previous || null;
+  const fingerprintUnchanged = Boolean(previous?.fingerprint) && previous.fingerprint === fingerprint;
+  const emptyBook = book.length === 0;
+  const noChange = (emptyBook && !trigger) || fingerprintUnchanged;
   return {
     liveTrading: false,
     orderPlacement: 'bot-and-connector-only',
-    no_change: candidates.length === 0,
+    routine: '7983-short-options',
+    empty_book: emptyBook,
+    trigger,
+    fingerprint,
+    fingerprint_unchanged: fingerprintUnchanged,
+    no_change: noChange,
+    silent: noChange,
     asOf,
     caps: {
       minDte: opts.minDte,
@@ -131,9 +149,36 @@ export function prefilterOptions(dump = {}, caps = {}) {
       maxAbsDelta: opts.maxAbsDelta,
       maxPremium
     },
+    book,
     candidates,
     rejectedCount,
     blockedShortDated,
-    note: '候选表只供 bot 确认。本脚本不下单、不撤单。0DTE/1DTE 不会进入候选。'
+    note: '空仓且没有触发，或指纹与上一轮相同，则沉默。有触发时只供 bot 确认。本脚本不下单。0DTE/1DTE 不会进入候选。'
   };
+}
+
+function optionIdentity(row) {
+  return {
+    symbol: row.symbol || null,
+    type: row.type || null,
+    strike: row.strike ?? null,
+    expiration: row.expiration || null,
+    qty: row.qty ?? null
+  };
+}
+
+function optionBook(dump) {
+  return asArray(dump.book || dump.positions || dump.optionPositions).map((row) => {
+    const qty = num(row.qty ?? row.quantity);
+    const expiration = String(row.expiration || row.expiry || '').slice(0, 10);
+    const typeText = String(row.type || row.right || '').toLowerCase();
+    return {
+      symbol: String(row.symbol || row.underlying || '').trim().toUpperCase(),
+      qty: qty == null ? null : Math.round(Math.abs(qty) * 10000) / 10000,
+      type: typeText.startsWith('p') ? 'put' : (typeText ? 'call' : null),
+      strike: num(row.strike),
+      expiration: /^\d{4}-\d{2}-\d{2}$/.test(expiration) ? expiration : null,
+      side: String(row.side || (qty != null && qty < 0 ? 'short' : 'long')).toLowerCase() === 'short' ? 'short' : 'long'
+    };
+  }).filter((row) => row.symbol).sort((a, b) => a.symbol.localeCompare(b.symbol) || String(a.expiration).localeCompare(String(b.expiration)) || (a.strike || 0) - (b.strike || 0));
 }

@@ -14,11 +14,13 @@ if (!scanPath) {
   process.exit(2);
 }
 const pack = JSON.parse(await readFile(scanPath, 'utf8'));
-const summary = renderListSummary(pack);
-const outPath = arg('--out');
-if (outPath) {
-  await mkdir(dirname(outPath), { recursive: true });
-  await writeFile(outPath, `${JSON.stringify(summary, null, 2)}\n`, 'utf8');
-}
+const outPath = arg('--out') || 'data/bot/list-scan.json';
+const previous = await readFile(outPath, 'utf8').then((text) => JSON.parse(text)).catch((error) => {
+  if (error.code === 'ENOENT') return null;
+  throw error;
+});
+const summary = renderListSummary(pack, previous);
+await mkdir(dirname(outPath), { recursive: true });
+await writeFile(outPath, `${JSON.stringify(summary, null, 2)}\n`, 'utf8');
 console.log(JSON.stringify(summary, null, 2));
 if (process.argv.includes('--exit-code')) process.exit(summary.no_change ? 0 : 10);

@@ -1,3 +1,5 @@
+import { stableHash } from './hash.js';
+
 const PROMOTE_KEYS = ['promote', 'promoted', 'promotions', 'upgrades', 'adds'];
 const DEMOTE_KEYS = ['demote', 'demoted', 'demotions', 'downgrades', 'drops'];
 const MOVER_KEYS = ['movers', 'mover', 'move'];
@@ -93,7 +95,11 @@ function unique(lines) {
   return out;
 }
 
-export function renderListSummary(pack = {}) {
+function moverSymbol(line) {
+  return String(line || '').split(' ')[0];
+}
+
+export function renderListSummary(pack = {}, previous = null) {
   const changes = section(pack, ['changes', 'actions', 'diffs']);
   const promote = unique([
     ...section(pack, PROMOTE_KEYS).map(formatMove),
@@ -109,15 +115,28 @@ export function renderListSummary(pack = {}) {
     ...section(pack, ['moversDown', 'losers'])
   ];
   const movers = unique(moverRows.map(formatMover)).sort((a, b) => a.localeCompare(b));
-  if (pack.no_change === true && !promote.length && !demote.length && !movers.length) {
-    return { no_change: true, text: 'NO_CHANGE', liveTrading: false };
-  }
-  if (!promote.length && !demote.length && !movers.length) {
-    return { no_change: true, text: 'NO_CHANGE', liveTrading: false };
+  const fingerprint = stableHash({ promote, demote, movers });
+  const fingerprintUnchanged = Boolean(previous?.fingerprint) && previous.fingerprint === fingerprint;
+  const seenPromote = new Set(previous?.promote || []);
+  const seenDemote = new Set(previous?.demote || []);
+  const seenMovers = new Set(previous?.movers || []);
+  const freshPromote = promote.filter((line) => !seenPromote.has(line));
+  const freshDemote = demote.filter((line) => !seenDemote.has(line));
+  const freshMovers = movers.filter((line) => !seenMovers.has(moverSymbol(line)));
+  const base = {
+    fingerprint,
+    fingerprint_unchanged: fingerprintUnchanged,
+    promote,
+    demote,
+    movers: movers.map(moverSymbol),
+    liveTrading: false
+  };
+  if (fingerprintUnchanged || (!freshPromote.length && !freshDemote.length && !freshMovers.length)) {
+    return { ...base, no_change: true, silent: true, text: 'NO_CHANGE' };
   }
   const lines = ['【美股名单】'];
-  if (promote.length) lines.push(`升：${promote.join('；')}`);
-  if (demote.length) lines.push(`降：${demote.join('；')}`);
-  if (movers.length) lines.push(`异动：${movers.join('；')}`);
-  return { no_change: false, text: lines.join('\n'), liveTrading: false };
+  if (freshPromote.length) lines.push(`升：${freshPromote.join('；')}`);
+  if (freshDemote.length) lines.push(`降：${freshDemote.join('；')}`);
+  if (freshMovers.length) lines.push(`异动：${freshMovers.join('；')}`);
+  return { ...base, no_change: false, silent: false, text: lines.join('\n') };
 }

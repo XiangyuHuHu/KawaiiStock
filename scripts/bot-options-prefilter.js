@@ -21,18 +21,21 @@ if (!chainPath) {
   process.exit(2);
 }
 const dump = JSON.parse(await readFile(chainPath, 'utf8'));
+const outPath = arg('--out') || 'data/bot/options-7983.json';
+const previous = await readFile(outPath, 'utf8').then((text) => JSON.parse(text)).catch((error) => {
+  if (error.code === 'ENOENT') return null;
+  throw error;
+});
 const pack = prefilterOptions(dump, {
   minDte: maybeNumber('--min-dte'),
   maxDte: maybeNumber('--max-dte'),
   minAbsDelta: maybeNumber('--min-delta'),
   maxAbsDelta: maybeNumber('--max-delta'),
   maxPremium: maybeNumber('--max-premium'),
-  asOf: arg('--as-of') || undefined
+  asOf: arg('--as-of') || undefined,
+  previous
 });
-const outPath = arg('--out');
-if (outPath) {
-  await mkdir(dirname(outPath), { recursive: true });
-  await writeFile(outPath, `${JSON.stringify(pack, null, 2)}\n`, 'utf8');
-}
+await mkdir(dirname(outPath), { recursive: true });
+await writeFile(outPath, `${JSON.stringify(pack, null, 2)}\n`, 'utf8');
 console.log(JSON.stringify(pack, null, 2));
 if (process.argv.includes('--exit-code')) process.exit(pack.no_change ? 0 : 10);

@@ -8,40 +8,45 @@
 
 | 场景 | 先跑 | 沉默条件 | 醒来之后 |
 | --- | --- | --- | --- |
-| 午间 :25 / :55，以及任何持仓决策环 | `node scripts/bot-heartbeat.js --input snapshot.json --routine midday-7983 --exit-code` | `no_change: true` | 把 `wakes` 交给模型。进入止损唤醒区时每次都醒 |
-| 每小时名单 | `node scripts/bot-list-summary.js --scan scan.json --exit-code` | `text` 为 `NO_CHANGE` | 原样转发 `text`，不要再让模型翻译升/降/异动 |
-| 7983 短周期权，约每 15 分钟 | `node scripts/bot-options-prefilter.js --chain chain.json --exit-code` | `no_change: true` | 模型只确认 `candidates`。下单仍由 connector 执行 |
+| 午间 :25 / :55 | `node scripts/bot-heartbeat.js --input snapshot.json --routine midday --exit-code` | `fingerprint_unchanged` 且 `new_alerts` 为空 | 指纹变了，或出现新的 −7% 警报 |
+| 每小时名单 | `node scripts/bot-list-summary.js --scan scan.json --exit-code` | 没有升、降、新异动，`text` 为 `NO_CHANGE` | 原样转发短模板 |
+| 7983 短周期权，约每 15 分钟 | `node scripts/bot-options-prefilter.js --chain chain.json --exit-code` | `empty_book && !trigger`，或 `fingerprint_unchanged` | 模型只确认新触发。下单仍由 connector 执行 |
 | 论坛扫描 | `node scripts/forum-aggregate.js --watchlist watch.json --exit-code` | `aggregate.json` 的 `silent: true` | 只给相对 overheard 账本的新指纹分 A/B。见 [forum-scan-prefetch.md](forum-scan-prefetch.md) |
 
 `no_change: true` 或 `silent: true` 时：不要呼叫模型，不要发帖，不要写分类。
 
-## 午间决策环
+## 和 routine-prompts-us-v1.3 对齐
 
-`snapshot.json` 可以是持仓快照，也可以只是一份状态 JSON。
+云端脚本用同一套指纹，方便 routine 先读 JSON 再决定是否沉默。
 
-```json
-{
-  "routine": "midday-7983",
-  "nav": 5123.4,
-  "positions": [
-    { "symbol": "NVDA", "qty": 10, "side": "long", "last": 180.2, "stop": 170 }
-  ]
-}
+指纹都是稳定键序的 SHA-256。现价跳动不进指纹。
+
+### 午间
+
+指纹材料只有净值（精确到分）、每条持仓的代码、方向、数量、止损价（精确到分）。止损用 `stop` 或 `stopPrice`。`state` 不进入指纹，也不单独叫醒。
+
+`fingerprint_unchanged: true` 且 `new_alerts` 为空：沉默。
+
+−7% 用 `changePct`，否则用 `(last - prev) / prev`，再否则用 `(last - avgCost) / avgCost`。小于等于 −7 的代码记入 `alerts`。相对上一份状态第一次出现，才放进 `new_alerts`。同一只股票继续跌，不算新警报。
+
+净值差一分、数量变化或止损价变化都会让指纹变化。只是现价在止损附近、但没到新的 −7%，保持沉默。
+
+### 7983 短周期权
+
+`empty_book: true` 且 `trigger: false`：沉默。`book` / `positions` 为空，且预筛候选和 `triggers` 都空。
+
+或者 `fingerprint_unchanged: true`：沉默。指纹是持仓合约（代码、数量、call/put、行权价、到期日）加上本轮触发合约（不含权利金）。同一张触发单下一轮还在，不再叫模型。
+
+### 每小时名单
+
+没有升、没有降、也没有新的异动：`text` 为 `NO_CHANGE`。异动按代码和上一份 `data/bot/list-scan.json` 比较，同一批代码不再发。升和降也要和上一份不同才写进短模板。模板仍是：
+
+```text
+【美股名单】
+升：MU 观察→核心
+降：OKLO
+异动：NVDA +3.20%
 ```
-
-也可以不给持仓，改传 `--state state.json`。脚本按稳定键序做哈希，只重排字段不会醒。
-
-默认把状态写到 `data/bot/heartbeat.json`（`data/` 不入库）。下一轮拿这一份做对照。
-
-默认阈值：
-
-- 净值变动超过 30 bps 才醒。小波动和慢止盈保持沉默。
-- 止损距离 ≤ 1%：每次都醒，即使持仓和净值没变。
-- 止损距离在 3% 以内，并且又靠近至少 0.5 个百分点：醒。
-- 代码、方向、数量、止损价本身变了：醒。
-- 第一次没有上一份状态：醒一次，用来建立基线。
-
-止损可以来自 `stop`、`stopPrice`，或现成的 `stopDistancePct`。空头用 `(stop - last) / last`。
 
 ## 名单中文摘要
 
@@ -58,7 +63,7 @@
 异动：NVDA +3.20%；SMCI -4.13%
 ```
 
-三类都空，输出就是 `NO_CHANGE`。
+没有升、降或新异动时，输出就是 `NO_CHANGE`。和上一小时指纹相同也是 `NO_CHANGE`。
 
 ## 短周期权预筛
 
@@ -72,7 +77,7 @@
 
 到期日按美东 `--as-of` 计算；省略时用研究台的美东交易日。`premiumCost` 是每股权利金乘 100 的参考金额，不是订单。
 
-候选为空时 `no_change: true`。有候选时，模型只做确认；成交仍由 bot + connector 完成。
+空仓且没有触发，或触发指纹与上一份 `data/bot/options-7983.json` 相同，则 `silent: true`。新触发才交给模型确认；成交仍由 bot + connector 完成。
 
 ## 论坛扫描
 
