@@ -16,3 +16,5 @@ npm start
 默认地址为 `http://127.0.0.1:3479`。资料目录默认在仓库下的 `vault/`（`src/paths.js`），也可以用环境变量指到本机 Obsidian。目录不存在时，启动日志会写出缺失路径。观察清单缺失时，股票池、推荐和每日观察回退到内置 public-demo，并在结果里写明。可选环境变量见 `.env.example` 和 `.env.options.example`。
 
 `data/` 下的实际账户配置、持仓、纸上账本、风控状态，以及 `reports/` 下的研究记录均不提交。带个人电脑挂载路径的 `docker-compose.yml` 也仅留在本机。容器示例见 `docker-compose.example.yml`：根文件系统只读，期权前向采集默认关闭，不下实盘单。
+
+Grok Bot 的美股 routine 先跑脚本再决定要不要叫模型。午间比对、名单中文摘要、短周期权预筛的沉默条件在 `docs/bot-usage.md`。论坛扫描写到盒子上的 `/workspace/forum-scan/`，契约在 `docs/forum-scan-prefetch.md`。这些脚本不下单。
