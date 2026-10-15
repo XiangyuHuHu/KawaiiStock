@@ -232,6 +232,7 @@ test('box paths stay absolute and these scripts do not place orders', async () =
   assert.equal(boxCopy, contract);
   const sources = await Promise.all([
     'src/bot/heartbeat.js',
+    'src/bot/main-trailing.js',
     'src/bot/list-summary.js',
     'src/bot/options-prefilter.js',
     'src/bot/forum-prefetch.js',

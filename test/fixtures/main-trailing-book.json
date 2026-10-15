@@ -1,0 +1,52 @@
+{
+  "account": "main",
+  "accountLast4": "7811",
+  "routine": "main-trailing",
+  "nav": 10000,
+  "hwmNav": 10000,
+  "hwmFlowAdjusted": true,
+  "positions": [
+    {
+      "symbol": "MU",
+      "qty": 20,
+      "last": 130,
+      "prev": 128,
+      "avgCost": 100,
+      "invalidation": 90,
+      "atr14": 4,
+      "peakClose": 132,
+      "theme": "ai-infra",
+      "volClass": "growth",
+      "stop": 90,
+      "marketValue": 2600
+    },
+    {
+      "symbol": "MRVL",
+      "qty": 15,
+      "last": 80,
+      "prev": 79,
+      "avgCost": 70,
+      "invalidation": 60,
+      "atr14": 3,
+      "peakClose": 82,
+      "theme": "ai-infra",
+      "volClass": "cycle",
+      "stop": 60,
+      "marketValue": 1200
+    },
+    {
+      "symbol": "IREN",
+      "qty": 10,
+      "last": 40,
+      "prev": 41,
+      "avgCost": 50,
+      "invalidation": 40,
+      "atr14": 6,
+      "peakClose": 70,
+      "theme": "ai-infra",
+      "volClass": "event",
+      "stop": 55,
+      "marketValue": 400
+    }
+  ]
+}

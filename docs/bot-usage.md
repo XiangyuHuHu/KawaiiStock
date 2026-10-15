@@ -9,6 +9,7 @@
 | 场景 | 先跑 | 沉默条件 | 醒来之后 |
 | --- | --- | --- | --- |
 | 午间 :25 / :55 | `node scripts/bot-heartbeat.js --input snapshot.json --routine midday --exit-code` | `fingerprint_unchanged` 且 `new_alerts` 为空 | 指纹变了，或出现新的 −7% 警报 |
+| 主账户权益追踪 | `node scripts/bot-heartbeat.js --input snapshot.json --routine main-trailing --exit-code` | 净值/数量/止损指纹未变，没有新的 −7%，且观察动作码未变 | 动作码变了、指纹变了，或新的 −7%。只写建议，不下单。见 [main-account-trailing-v1.md](main-account-trailing-v1.md) |
 | 每小时名单 | `node scripts/bot-list-summary.js --scan scan.json --exit-code` | 没有升、降、新异动，`text` 为 `NO_CHANGE` | 原样转发短模板 |
 | 7983 短周期权，约每 15 分钟 | `node scripts/bot-options-prefilter.js --chain chain.json --exit-code` | `empty_book && !trigger`，或 `fingerprint_unchanged` | 模型只确认新触发。下单仍由 connector 执行 |
 | 论坛扫描 | `node scripts/forum-aggregate.js --watchlist watch.json --exit-code` | `aggregate.json` 的 `silent: true` | 只给相对 overheard 账本的新指纹分 A/B。见 [forum-scan-prefetch.md](forum-scan-prefetch.md) |
@@ -30,6 +31,22 @@
 −7% 用 `changePct`，否则用 `(last - prev) / prev`，再否则用 `(last - avgCost) / avgCost`。小于等于 −7 的代码记入 `alerts`。相对上一份状态第一次出现，才放进 `new_alerts`。同一只股票继续跌，不算新警报。
 
 净值差一分、数量变化或止损价变化都会让指纹变化。只是现价在止损附近、但没到新的 −7%，保持沉默。
+
+### 主账户权益追踪（观察）
+
+`node scripts/bot-heartbeat.js --input snapshot.json --routine main-trailing --exit-code`
+
+只覆盖 7811/主账户权益，以及操作者所称的 wealth equity book ••••3469。7983 期权账户排除。这一节不改下面的 7983 预筛。阈值是约 $10k–$15k 自营账户的研究默认，不是实盘授权。脚本不读密钥，不发单，也不自动减仓。
+
+输入里带 `account: "main"`、`accountLast4: "7811"` 或 `"3469"`、`routine: "main-trailing"`，或持仓同时有 `avgCost`、`invalidation`、`atr14`、`peakClose`、`theme` 时，才会附上 `mainTrailing`。账户级还可以给 `nav` 和 `hwmNav`。`marketValue` 有的话按主题加总权重。
+
+每条持仓给出 `r`（入场 − 失效价）、`unrealizedR`、`suggestedTrailStop`、`suggestedAction`。动作码只有 `HOLD`、`TRIM_25`、`TRIM_50`、`EXIT`、`REBUY_1_3`、`REBUY_ADD`、`NO_TRADE`。`orderQty` 始终是 null。
+
+追踪线是 `max(上一档止损, 持仓以来最高收盘 − k × ATR14)`。成长/周期的研究默认 k=2.5（对照 2.5 与 3.0）；事件/高波动 k=3.0（对照 3.0 与 3.5）。k 只能往上收，不能随回撤放宽。高水位回撤带 6% / 10% / 15% 只标注 `riskMode`：`normal`、`reduce`、`contract`，不改动作码。
+
+醒来仍是退出码 10，沉默是 0。三条里中一条就醒：建议动作码相对上一份状态变了；新的 −7% 警报；净值、数量或止损指纹变了。现价在同一动作码里晃动，保持沉默。只改 `hwmNav` 而动作码不变，也沉默。状态文件默认写到 `data/bot/main-trailing.json`，不和午间指纹混用。`--out` 可以改路径。脚本即使用退出码 0 也会覆写这份 JSON。
+
+规则摘要见 [main-account-trailing-v1.md](main-account-trailing-v1.md)。
 
 ### 7983 短周期权
 
