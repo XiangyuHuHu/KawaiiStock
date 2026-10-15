@@ -1,7 +1,5 @@
 import { ensureScreenerLoaded } from './screener.js';
 import { loadPosters, runPosters } from './poster.js';
-import { bindOptionsUi, loadOptionStrategies, loadOptions } from './options.js';
-import { bindWheelUi, loadWheel } from './wheel.js';
 import { bindOracleUi, loadOracle } from './oracle.js';
 import { bindPaperUi, loadPaper } from './paper.js';
 import { bindWatchUi, loadWatchlist } from './watchlist.js';
@@ -54,7 +52,7 @@ function setActiveTab(id) {
     panel.classList.toggle('is-active', active);
     panel.hidden = !active;
   });
-  if (state.desk && id !== 'sim' && id !== 'compare' && id !== 'actuals' && id !== 'options' && id !== 'paper' && id !== 'guards' && id !== 'review' && id !== 'oracle') {
+  if (state.desk && id !== 'sim' && id !== 'compare' && id !== 'actuals' && id !== 'paper' && id !== 'guards' && id !== 'review' && id !== 'oracle') {
     renderOverview(state.desk);
   }
 }
@@ -1228,7 +1226,7 @@ async function refreshAll() {
   const tick = () => { button.textContent = `更新中… ${Math.round((Date.now() - started) / 1000)}s`; };
   tick();
   const timer = setInterval(tick, 1000);
-  if (status) status.textContent = '持仓 → 叙事日报 → 推荐 → 模拟结算 → 今日买卖 / 价位图 → 期权 → 每日观察 → 算卦 → Agentic意见 → 止损 / 风控 → 纸上实验。不下单，本机不打 Robinhood。';
+  if (status) status.textContent = '持仓 → 叙事日报 → 推荐 → 模拟结算 → 今日买卖 / 价位图 → 每日观察 → 算卦 → Agentic意见 → 止损 / 风控 → 纸上实验。不下单，本机不打 Robinhood。';
   try {
     const res = await fetch('/api/daily/run', {
       method: 'POST',
@@ -1241,7 +1239,6 @@ async function refreshAll() {
       dailyResultText(data),
       data.recommendations?.grok && !data.recommendations.grokError ? 'Grok 推荐已写' : 'Grok 推荐未完成',
       data.recommendations?.chatgptNote || (data.recommendations?.chatgpt ? 'ChatGPT 推荐已处理' : 'ChatGPT 推荐未完成'),
-      data.options?.ok ? `期权扫描 ${data.options.scanned ?? 0}` : '期权未完成',
       data.watchlist?.ok ? `美股观察 ${data.watchlist.scanned ?? 0}` : '美股观察未完成',
       data.watchlistCn?.ok ? `A股观察 ${data.watchlistCn.scanned ?? 0}` : 'A股观察未完成',
       data.posters?.ok ? '价位图已写' : '价位图未完成',
@@ -1275,7 +1272,6 @@ async function main() {
     if (btn.dataset.tab === 'compare') loadCompare();
     if (btn.dataset.tab === 'sim') loadSim();
     if (btn.dataset.tab === 'paper') {
-      loadWheel().catch(() => {});
       loadPaper().catch((error) => {
         const status = document.getElementById('paperStatus');
         if (status) status.textContent = `纸上实验载入失败：${error.message}`;
@@ -1296,14 +1292,6 @@ async function main() {
       const status = document.getElementById('watchStatus');
       if (status) status.textContent = `观察板载入失败：${error.message}`;
     });
-    if (btn.dataset.tab === 'options') {
-      loadOptionStrategies()
-        .then(() => loadOptions())
-        .catch((error) => {
-          const status = document.getElementById('optionStatus');
-          if (status) status.textContent = `期权页载入失败：${error.message}`;
-        });
-    }
     if (btn.dataset.tab === 'oracle') {
       loadOracle().catch((error) => {
         const status = document.getElementById('oracleStatus');
@@ -1339,9 +1327,6 @@ async function main() {
   document.getElementById('posterWriteBtn')?.addEventListener('click', runPosters);
   document.getElementById('tradableRefreshBtn')?.addEventListener('click', () => loadTradable());
   document.getElementById('tradableWriteBtn')?.addEventListener('click', () => loadTradable({ write: true }));
-  bindOptionsUi();
-  bindWheelUi();
-  loadWheel().catch(() => {});
   bindOracleUi();
   bindPaperUi();
   bindWatchUi();

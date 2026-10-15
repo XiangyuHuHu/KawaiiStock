@@ -28,7 +28,6 @@ await writeFile(join(process.env.KAWAII_DATA_DIR, 'accounts.json'), JSON.stringi
 }));
 
 const { loadUniverse } = await import('../src/universe.js');
-const { optionUniverse, WATCHLIST_FALLBACK_N } = await import('../src/options/engine.js');
 const { loadWatchlists } = await import('../src/screener/market-data.mjs');
 const { ensureOracleWrite, buildOracleDesk, spxReadingFromCurrent } = await import('../src/oracle/qimen.js');
 const { currentQimenChart } = await import('../src/oracle/qimen-current.js');
@@ -45,16 +44,6 @@ test('missing watchlists fall back to the public demo pool with a note', async (
   assert.equal(lists[0].id, 'public-demo');
   assert.equal(lists[0].note, PUBLIC_DEMO_NOTE);
   assert.deepEqual(lists[0].symbols, universe.symbols.map((row) => row.symbol));
-});
-
-test('empty holdings and tape use the demo watchlist and say why', async () => {
-  const pool = await optionUniverse({ full: true });
-  assert.equal(pool.poolSource, 'watchlist-fallback');
-  assert.match(pool.poolNote, /研究持仓和关注带为空/);
-  assert.match(pool.poolNote, /public-demo/);
-  assert.equal(pool.length, Math.min(WATCHLIST_FALLBACK_N, 10));
-  assert.equal(pool[0].from, 'watchlist-fallback');
-  assert.equal(pool[0].symbol, 'AAPL');
 });
 
 test('today qimen write generates a chart; older empty days do not', async () => {

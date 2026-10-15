@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { chooseUnderlyingQuote, parseEarningsDate, sourceDiagnostics } from '../src/options/sources.js';
 import { mapTradierContract, tradierGet, loadTradierChain, providerStatus } from '../src/options/providers.js';
-import { quoteIssues } from '../src/options/contracts.js';
 const now=Date.parse('2026-09-16T15:00:00Z');
 
 test('quote selection keeps price/time paired, chooses latest timed source, never borrows a time',()=>{
@@ -21,7 +20,7 @@ test('Tradier maps bid/ask independently; missing side time or nonstandard deliv
   const leg=mapTradierContract(raw);assert.equal(leg.quoteAt,now-1000);assert.equal(leg.standard,true);assert.equal(leg.iv,null);
   assert.equal(mapTradierContract({...raw,bid_date:null}).quoteAt,null);
   assert.equal(mapTradierContract({...raw,root_symbol:'ABC1'}).standard,false);
-  assert.ok(quoteIssues(mapTradierContract(raw,{sandbox:true})).some(s=>s.includes('延迟')));
+  assert.equal(mapTradierContract(raw,{sandbox:true}).quoteMode,'delayed');
 });
 test('optional provider uses GET-only allowlisted market endpoints and sanitized errors',async()=>{
   assert.equal(providerStatus({}).configured,false);

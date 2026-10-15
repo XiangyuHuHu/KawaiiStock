@@ -1,8 +1,3 @@
-import { forwardCollector, initializeCollector, configureCollector } from './src/options/collector.js';
-import { providerStatus } from './src/options/providers.js';
-import { loadComparison } from './src/options/outcomes.js';
-import { listOptionsHistory, loadOptionsHistory } from './src/options/history.js';
-import { loadForward, refreshForward } from './src/options/forward.js';
 import http from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
@@ -18,8 +13,6 @@ import { getSimState, resetSim, runSimSettlement } from './src/sim.js';
 import { runDailyJob } from './src/daily.js';
 import { buildAccountPosters, buildSymbolPoster, posterPage, writePosters } from './src/posters.js';
 import { buildTradableDesk, writeTradable } from './src/tradable.js';
-import { buildOptionsDesk, listStrategies, loadOptionsFile, writeOptions, saveOptionsScan } from './src/options/engine.js';
-import { postWheel, readWheel } from './src/options/wheel-ledger.js';
 import { checkOrder, getRiskView, setKill, setMode } from './src/risk/service.js';
 import { getPaperView, listPaperViews, placePaperOrder, resetPaper } from './src/paper/desk.js';
 import { runPaperOpen } from './src/paper/auto.js';
@@ -34,7 +27,7 @@ async function refreshAgenticBrief(date) {
     const { buildAndWriteAgenticBrief } = await import('./src/agentic-brief.js');
     await buildAndWriteAgenticBrief({ date });
   } catch {
-    /* 意见刷新失败不挡住观察、期权或推荐本身。 */
+    /* 意见刷新失败不挡住观察或推荐本身。 */
   }
 }
 
@@ -322,131 +315,6 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       pack.written = await writeTradable(pack);
-      sendJson(res, 200, pack);
-      return;
-    }
-    if (req.method === 'POST' && url.pathname === '/api/options/save') {
-      const body = await readJsonBody(req);
-      const result = await saveOptionsScan(body.scanId);
-      sendJson(res, result.ok ? 200 : 409, result); return;
-    }
-    if (url.pathname === '/api/options/forward' && ['GET', 'POST'].includes(req.method)) {
-      const data = req.method === 'POST' ? await forwardCollector.run() : await loadForward();
-      sendJson(res, data ? 200 : 503, data ? { ...data, collector: forwardCollector.status() } : { ok: false, error: '采集轮次失败，将自动重试；原记录保留' }); return;
-    }
-    if (url.pathname === '/api/options/collector' && ['GET', 'POST'].includes(req.method)) {
-      if (req.method === 'POST') {
-        const body = await readJsonBody(req);
-        if (typeof body.enabled !== 'boolean') { sendJson(res, 400, { ok: false, error: 'enabled 必须为布尔值' }); return; }
-        sendJson(res, 200, { ok: true, collector: await configureCollector(body.enabled) });
-      } else sendJson(res, 200, { ok: true, collector: forwardCollector.status() });
-      return;
-    }
-    if (req.method === 'GET' && url.pathname === '/api/options/sources') {
-      sendJson(res, 200, { ok: true, provider: providerStatus() }); return;
-    }
-    if (req.method === 'GET' && url.pathname === '/api/options/comparison') {
-      const result = await loadComparison(url.searchParams.get('key'), url.searchParams.get('strategy') || 'cov');
-      sendJson(res, result ? 200 : 404, result || { ok: false, error: '此扫描尚未保存或历史文件不存在' }); return;
-    }
-    if (req.method === 'GET' && url.pathname === '/api/options/history') {
-      const strategy = url.searchParams.get('strategy') || 'cov';
-      const key = url.searchParams.get('key');
-      if (key) {
-        const pack = await loadOptionsHistory(key, strategy);
-        sendJson(res, pack ? 200 : 404, pack || { ok: false, error: '历史扫描不存在' });
-      } else sendJson(res, 200, { ok: true, history: await listOptionsHistory(strategy) });
-      return;
-    }
-    if (url.pathname === '/api/options/wheel' && (req.method === 'GET' || req.method === 'POST')) {
-      try {
-        if (req.method === 'GET') {
-          const pack = await loadOptionsFile(url.searchParams.get('date') || undefined);
-          sendJson(res, 200, await readWheel({ candidates: pack?.wheelCandidates || [] }));
-          return;
-        }
-        const body = await readJsonBody(req);
-        const result = await postWheel(body);
-        sendJson(res, result.ok ? 200 : 400, result);
-      } catch (error) {
-        sendJson(res, 400, { ok: false, liveTrading: false, error: error.message || '轮证纸上账本失败' });
-      }
-      return;
-    }
-    if (req.method === 'GET' && url.pathname === '/api/options/strategies') {
-      sendJson(res, 200, { strategies: listStrategies(), defaultId: 'cov' });
-      return;
-    }
-    if (req.method === 'GET' && url.pathname === '/api/options') {
-      const strategyId = url.searchParams.get('strategy') || 'cov';
-      const date = url.searchParams.get('date') || undefined;
-      let feePerContract;
-      if (url.searchParams.get('fee')?.trim()) {
-        feePerContract = Number(url.searchParams.get('fee'));
-        if (!Number.isFinite(feePerContract) || feePerContract < 0 || feePerContract > 100) { sendJson(res, 400, { error: '手续费须为 0–100 美元/腿/次' }); return; }
-      }
-      const cached = url.searchParams.get('refresh') === '1' ? null : await loadOptionsFile(date, strategyId);
-      if (url.searchParams.get('quotes') === '1' && url.searchParams.get('refresh') !== '1') {
-        if (!cached?.ideas?.length) {
-          sendJson(res, 200, cached || { ok: true, ideas: [], buys: [], note: '还没有可刷新的扫描。' });
-          return;
-        }
-        const { refreshDisplayedQuotes } = await import('./src/options/engine.js');
-        const refreshed = await refreshDisplayedQuotes(cached);
-        sendJson(res, 200, { ...refreshed, cached: true, strategies: listStrategies() });
-        return;
-      }
-      if (url.searchParams.get('refresh') === '1') {
-        const pack = await buildOptionsDesk({
-          date,
-          strategyId,
-          feePerContract,
-          deskId: url.searchParams.get('desk') || 'grok',
-          refresh: true
-        });
-        if (pack.ok) {
-          const { attachOptionScore } = await import('./src/options/score.js');
-          await attachOptionScore(pack);
-        }
-        sendJson(res, pack.ok ? 200 : 400, pack);
-        return;
-      }
-      if (cached) {
-        sendJson(res, 200, { ...cached, cached: true, strategies: listStrategies() });
-        return;
-      }
-      const { attachOptionScore } = await import('./src/options/score.js');
-      const empty = await attachOptionScore({
-        ok: true,
-        cached: false,
-        unscanned: true,
-        liveTrading: false,
-        draft: true,
-        strategy: listStrategies().find((row) => row.id === strategyId) || listStrategies()[0],
-        strategies: listStrategies(),
-        buys: [],
-        tempting: [],
-        ideas: [],
-        wheelCandidates: [],
-        counts: { buy: 0, tempting: 0, noTrade: 0, scanned: 0 },
-        note: '尚未扫描。点「扫描」才拉 5 分钟 K 线和期权链。草稿，不是下单。'
-      });
-      sendJson(res, 200, empty);
-      return;
-    }
-    if (req.method === 'POST' && url.pathname === '/api/options/run') {
-      const pack = await buildOptionsDesk({
-        date: url.searchParams.get('date') || undefined,
-        strategyId: url.searchParams.get('strategy') || 'cov',
-        deskId: url.searchParams.get('desk') || 'grok',
-        refresh: true
-      });
-      if (!pack.ok) {
-        sendJson(res, 400, pack);
-        return;
-      }
-      pack.written = await writeOptions(pack);
-      await refreshAgenticBrief(pack.date);
       sendJson(res, 200, pack);
       return;
     }
@@ -794,7 +662,4 @@ server.timeout = 180000;
 server.listen(PORT, HOST, () => {
   console.log(`Kawaii Research Desk  http://${HOST}:${PORT}`);
   logMissingPaths().catch((error) => console.error(`路径检查失败：${error.message}`));
-  initializeCollector().catch(() => console.error('期权只读采集器初始化失败'));
 });
-
-server.on('close', () => forwardCollector.stop());

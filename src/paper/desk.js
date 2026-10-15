@@ -478,16 +478,6 @@ async function placePaperOrderLocked(raw = {}, internal = {}) {
       trustedLeg = live;
     }
   }
-  if (isOption && !(num(trustedLeg?.bid) > 0 && num(trustedLeg?.ask) >= num(trustedLeg?.bid))) {
-    const { loadOptionsFile } = await import('../options/engine.js');
-    const day = todayStamp();
-    const pack = await loadOptionsFile(day, 'cov');
-    if (pack?.date === day && !pack.stale) {
-      trustedLeg = (pack.ideas || [])
-        .flatMap((row) => (row.contract?.legs || []).map((leg) => ({ ...leg, symbol: row.symbol })))
-        .find((leg) => sameOptionContract(raw, leg) && leg.standard !== false && (leg.multiplier == null || Number(leg.multiplier) === 100)) || null;
-    }
-  }
   if (isOption && reducing && trustedLeg && !(num(trustedLeg.quoteAt) > 0)) {
     raw = { ...raw, paperReference: true };
   }

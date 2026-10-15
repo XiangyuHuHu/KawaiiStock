@@ -26,7 +26,7 @@
         <div class="stance-pill" id="stancePill">WAIT</div>
         <div class="mast-refresh">
           <button type="button" id="refreshAllBtn">一键更新</button>
-          <p id="refreshAllStatus">全部：推荐 / 模拟结算 / 今日买卖 / 价位图 / 期权 / 观察 / 算卦 / Agentic意见 / 纸上实验</p>
+          <p id="refreshAllStatus">全部：推荐 / 模拟结算 / 今日买卖 / 价位图 / 观察 / 算卦 / Agentic意见 / 纸上实验</p>
         </div>
       </header>
       <div class="desk-bar" id="deskBar"></div>
@@ -40,7 +40,6 @@
         <button type="button" class="tab" data-tab="watch">每日观察</button>
         <button type="button" class="tab" data-tab="reports">叙事日报</button>
         <button type="button" class="tab" data-tab="strategy">策略</button>
-        <button type="button" class="tab" data-tab="options">期权</button>
         <button type="button" class="tab" data-tab="oracle">算卦</button>
         <button type="button" class="tab" data-tab="compare">对比</button>
         <button type="button" class="tab" data-tab="sim">模拟操作</button>
@@ -60,7 +59,7 @@
             <div>
               <p class="kicker">Agentic Brief</p>
               <h2 id="briefHeadline">Agentic 操作意见</h2>
-              <p class="muted">把每日观察、算卦、期权和当日推荐收成一份意见。不是下单，不进推荐 / 模拟 / 实际操作。</p>
+              <p class="muted">把每日观察、算卦和当日推荐收成一份意见。不是下单，不进推荐 / 模拟 / 实际操作。期权不进这份意见。</p>
             </div>
             <div class="head-actions">
               <button type="button" class="text-btn" id="briefRefreshBtn">按已保存结果重算</button>
@@ -282,23 +281,6 @@
         <article class="sheet strategy-body" id="strategyBody">正在读取策略。</article>
       </section>
 
-      <section class="tab-panel" id="panel-options" hidden>
-        <article class="sheet options-workspace">
-          <div class="sheet-head"><div><p class="kicker">Options · Read-only research</p><h2>期权研究</h2><p class="muted">先核实报价，再比较净成本与风险。只读、不下单，不写入推荐操作 / 模拟操作 / 实际操作。</p></div>
-            <div class="head-actions"><label>策略 <select id="optionStrategy"></select></label><button type="button" class="text-btn" id="optionRefreshBtn">重新扫描</button><button type="button" class="text-btn" id="optionWriteBtn" disabled>保存本次扫描</button></div></div>
-          <div class="option-controls"><label>手续费 / 每腿每次（USD）<input id="optionFee" type="number" min="0" max="100" step="0.01" value="0"></label><label>单个组合风险预算（USD）<input id="optionBudget" type="number" min="0" step="1" placeholder="未填写：不计算数量"></label><p class="muted">Robinhood 股票期权佣金按 $0 计；其他券商请改数字后重新扫描。Yahoo/Nasdaq 不提供每腿买卖盘时间，所以不能把免费源扫描当作买入指令。数量仅为预算上限。</p></div>
-          <div class="option-controls"><label>历史扫描（观察日按美东日期）<select id="optionHistory"><option value="">最新已保存扫描</option></select></label><p class="muted" id="optionHistoryStatus">读取历史列表中…</p></div>
-          <p id="optionStatus" class="status-line" role="status" aria-live="polite">正在读取扫描记录。</p>
-          <div id="optionFreshness"></div><details class="option-source-details"><summary>行情来源与数据缺口</summary><div id="optionSources"></div></details><div id="optionSummary"></div>
-          <section id="optionWheel" class="option-forward" data-wheel-root aria-label="纸上轮证"></section>
-          <section id="optionRecommendations" class="option-recommendations" aria-label="推荐买入候选"></section>
-          <div class="option-controls"><label>搜索标的 <input id="optionSearch" type="search" placeholder="代码或名称"></label><label>状态 <select id="optionFilter"><option value="all">全部扫描</option><option value="eligible">推荐买入候选</option><option value="blocked">受阻 / 观察</option></select></label><label>排序 <select id="optionSort"><option value="status">可研究优先</option><option value="ev">净 EV / 风险</option><option value="risk">每组最大损失</option></select></label></div>
-          <div class="option-work-grid"><div class="table-wrap" id="optionScanTable"></div><aside id="optionDetail" tabindex="-1" aria-label="合约研究详情"></aside></div>
-          <section class="option-forward"><div class="sheet-head"><h3>同合约前向复盘 · 尚需真实报价验证</h3><button id="optionCollectorBtn" type="button" class="text-btn">自动采集状态读取中</button><button id="optionForwardBtn" type="button" class="text-btn">刷新合约复盘</button></div><div id="optionCollectorStatus" role="status"></div><div id="optionForward"></div></section>
-          <section class="option-forward"><h3>当前所选扫描 · 原推荐与同合约结果对照</h3><div id="optionComparison" class="table-wrap"></div></section>
-          <details class="option-aux"><summary>辅助复盘：股票次日方向（不代表期权收益）</summary><div id="optionScore"></div></details>
-        </article>
-      </section>
       <section class="tab-panel" id="panel-oracle" hidden>
         <p class="sim-banner">卦象观察 · 娱乐解读，未经股价预测验证 · 不下单 · 不进推荐 / 模拟 / 实际操作</p>
         <article class="sheet oracle-workspace">
@@ -420,8 +402,7 @@
       </section>
 
       <section class="tab-panel" id="panel-paper" hidden>
-        <p class="sim-banner">Phase 0 纸上实验 · 0A 财富、0B 进攻、0C Agentic 同一标的不重复 · 0D 算卦 $100k · 0E 期权 $100k · 0F Claude 动量 $100k · 0G 小孟A股 ¥10万 · 0H 小孟美股 $10万 · 不是实盘 · 不写「模拟操作」</p>
-        <section id="paperWheel" class="sheet" data-wheel-root aria-label="纸上轮证"></section>
+        <p class="sim-banner">Phase 0 纸上实验 · 0A 财富、0B 进攻、0C Agentic 同一标的不重复 · 0D 算卦 $100k · 0E 只处理已有期权 · 0F Claude 动量 $100k · 0G 小孟A股 ¥10万 · 0H 小孟美股 $10万 · 不是实盘 · 不写「模拟操作」</p>
         <div class="account-bar compare-account-bar" id="paperDeskBar"></div>
         <section class="strip" id="paperStrip"></section>
         <p class="status-line" id="paperStatus">正在读取纸上账本。</p>
@@ -431,7 +412,7 @@
             <div>
               <p class="kicker">Paper Desk</p>
               <h2>纸上实验仓</h2>
-              <p class="muted">默认不手操。0A $1M、0B $50k 没卖点就拿着。0C $5k 没有 A 级就空仓。0D 偏涨试买，当日判断为跌并且有持仓就卖。0E 单腿按 1 张买，跌 20% 平仓；还在推荐里就拿着，离开推荐并且涨了 40% 才止盈。0F 全 list 按 6 个月涨幅÷波动排名，大盘在 200 日线上才买，3×ATR 吊灯止损，跌破 100 日线或掉出前 20 名就卖。点击按钮或运行每日流水才触发纸上过闸；本站没有独立定时器（每日任务北京 22:45）。只在美东 9:30–16:00 下自动单，其他时间只按日线最低价回放券商止损。0A–0C 同一标的只进一本。</p>
+              <p class="muted">默认不手操。0A $1M、0B $50k 没卖点就拿着。0C $5k 没有 A 级就空仓。0D 偏涨试买，当日判断为跌并且有持仓就卖。0E 不再按期权扫描开新仓；已有合约跌 20% 平仓，离开研究名单并且涨了 40% 才止盈。0F 全 list 按 6 个月涨幅÷波动排名，大盘在 200 日线上才买，3×ATR 吊灯止损，跌破 100 日线或掉出前 20 名就卖。点击按钮或运行每日流水才触发纸上过闸；本站没有独立定时器（每日任务北京 22:45）。只在美东 9:30–16:00 下自动单，其他时间只按日线最低价回放券商止损。0A–0C 同一标的只进一本。</p>
             </div>
             <div class="head-actions">
               <button type="button" class="text-btn" id="paperRefreshBtn">刷新</button>
@@ -456,7 +437,7 @@
             <label>品种
               <select id="paperInstrument">
                 <option value="equity">股票</option>
-                <option value="option" disabled>期权（仅 0E 合约自动过闸）</option>
+                <option value="option" disabled>期权（研究台已关闭，表单不下新期权）</option>
               </select>
             </label>
             <label>数量
@@ -575,7 +556,7 @@
     </main>
 
     <footer class="colophon">
-      <span id="colophonText">每日流水：真实持仓 → 推荐操作 → 模拟操作 → 实际操作。今日买卖 / 每日观察 / 算卦是独立草稿。默认不下单。</span>
+      <span id="colophonText">每日流水：真实持仓 → 推荐操作 → 模拟操作 → 实际操作。今日买卖 / 每日观察 / 算卦是独立草稿。期权研究台已关闭。默认不下单。</span>
       <span id="generatedAt"></span>
     </footer>
     <div id="researchDrawer" class="drawer-layer" hidden></div>

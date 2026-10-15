@@ -28,7 +28,6 @@ import { buildRecommendations } from './recommend.js';
 import { runSimSettlement } from './sim.js';
 import { ensureActualsDirs, extractFillsFromScans, recordDailyActuals } from './actuals.js';
 import { buildTradableDesk, writeTradable } from './tradable.js';
-import { buildOptionsDesk, writeOptions } from './options/engine.js';
 import { listPaperViews } from './paper/desk.js';
 import { runPaperOpen } from './paper/auto.js';
 import { buildAndWriteWatchlist } from './strategy/watchlist.js';
@@ -299,14 +298,6 @@ export async function runDailyJob(opts = {}) {
   }
   if (posters.error) posters.ok = false;
 
-  let options = null;
-  try {
-    options = await buildOptionsDesk({ date, strategyId: 'cov' });
-    await writeOptions(options);
-  } catch (error) {
-    options = { ok: false, error: error.message, buys: [], tempting: [] };
-  }
-
   let watchlist = null;
   try {
     watchlist = await buildAndWriteWatchlist({ date });
@@ -366,7 +357,6 @@ export async function runDailyJob(opts = {}) {
     brief = await buildAndWriteAgenticBrief({
       date,
       watchlist,
-      options,
       recs: grokRecs?.error ? null : grokRecs
     });
   } catch (error) {
@@ -378,7 +368,7 @@ export async function runDailyJob(opts = {}) {
     liveTrading,
     date,
     generatedAt: new Date().toISOString(),
-    steps: ['真实持仓', '叙事日报', '推荐操作', '模拟操作', '实际操作', '今日买卖', '价位图', '期权推荐', '每日观察', '算卦', 'Agentic意见', '止损护栏', '纸上实验自动'],
+    steps: ['真实持仓', '叙事日报', '推荐操作', '模拟操作', '实际操作', '今日买卖', '价位图', '每日观察', '算卦', 'Agentic意见', '止损护栏', '纸上实验自动'],
     posters,
     oracle,
     holdings,
@@ -413,16 +403,6 @@ export async function runDailyJob(opts = {}) {
       count: tradable?.ideas?.length ?? 0,
       counts: tradable?.counts || null,
       error: tradable?.error || null
-    },
-    options: {
-      ok: Boolean(options?.ok),
-      date: options?.date || date,
-      strategy: options?.strategy?.id || 'cov',
-      buyCount: options?.buys?.length ?? 0,
-      temptingCount: options?.tempting?.length ?? 0,
-      scanned: options?.scanned ?? 0,
-      score: options?.score?.locked || null,
-      error: options?.error || null
     },
     watchlist: {
       ok: Boolean(watchlist?.ok),
@@ -530,7 +510,7 @@ export async function runDailyJob(opts = {}) {
         fills: row?.ledger?.fills?.length ?? 0,
         mode: row?.mode || 'NORMAL'
       }])),
-      note: '每日流水触发八本纸上账：0A–0F，以及 0G 小孟A股、0H 小孟美股。0E 有单腿参考合约就按 1 张小仓买。不是实盘，不写模拟操作。'
+      note: '每日流水触发八本纸上账：0A–0F，以及 0G 小孟A股、0H 小孟美股。0E 不再按期权扫描开新仓，已有合约仍走止损。不是实盘，不写模拟操作。'
     };
   } catch (error) {
     payload.paper = { ok: false, error: error.message, note: '纸上实验失败，保留其他步骤结果并标记任务部分完成。' };

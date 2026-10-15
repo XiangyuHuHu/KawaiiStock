@@ -8,7 +8,7 @@ function setStatus(text) {
 
 function list(title, rows) {
   if (!rows?.length) return '';
-  return `<section><h3>${esc(title)}</h3><ul class="action-list">${rows.map((row) => `<li><strong>${esc(row.action)} ${esc(row.symbol)}</strong><span>${esc(row.stageLabel || '')}${row.score != null ? ` · ${row.score}分` : ''}</span><small>观察 ${lean(row.watch)} · 推荐 ${lean(row.rec)} · 期权 ${lean(row.option)}${row.optionEligible ? '合格' : ''} · 算卦 ${lean(row.oracle)}</small><p>${esc(row.reason)}</p></li>`).join('')}</ul></section>`;
+  return `<section><h3>${esc(title)}</h3><ul class="action-list">${rows.map((row) => `<li><strong>${esc(row.action)} ${esc(row.symbol)}</strong><span>${esc(row.stageLabel || '')}${row.score != null ? ` · ${row.score}分` : ''}</span><small>观察 ${lean(row.watch)} · 推荐 ${lean(row.rec)} · 算卦 ${lean(row.oracle)}</small><p>${esc(row.reason)}</p></li>`).join('')}</ul></section>`;
 }
 
 function renderBrief(pack) {
@@ -35,7 +35,7 @@ function renderBrief(pack) {
 }
 
 export async function loadBrief({ write = false } = {}) {
-  setStatus(write ? '正在按已保存的观察 / 算卦 / 期权 / 推荐重算…' : '正在读取 Agentic 操作意见…');
+  setStatus(write ? '正在按已保存的观察 / 算卦 / 推荐重算…' : '正在读取 Agentic 操作意见…');
   try {
     const response = await fetch(write ? '/api/agentic-brief/run' : '/api/agentic-brief', { method: write ? 'POST' : 'GET', cache: 'no-store', headers: write ? { 'Content-Type': 'application/json' } : undefined, body: write ? '{}' : undefined });
     const data = await response.json();

@@ -11,14 +11,9 @@
     "seed": "node scripts/seed-holdings.js",
     "recs": "node --input-type=module -e \"import { buildRecommendations } from './src/recommend.js'; console.log(JSON.stringify(await buildRecommendations(), null, 2))\"",
     "daily": "node scripts/daily.js",
-    "options": "node scripts/options.js --write",
     "order": "node scripts/order.js",
     "paper": "node scripts/paper.js",
-    "bot:heartbeat": "node scripts/bot-heartbeat.js",
-    "bot:list-summary": "node scripts/bot-list-summary.js",
-    "bot:options-prefilter": "node scripts/bot-options-prefilter.js",
-    "bot:forum-prefetch": "node scripts/forum-prefetch.js",
-    "bot:forum-aggregate": "node scripts/forum-aggregate.js"
+    "bot:heartbeat": "node scripts/bot-heartbeat.js"
   },
   "dependencies": {
     "qimen-dunjia": "3.1.0"

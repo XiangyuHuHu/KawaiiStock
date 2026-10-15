@@ -53,15 +53,13 @@ export const OBSIDIAN_CHATGPT_ACTUALS = process.env.OBSIDIAN_CHATGPT_ACTUALS || 
 export const OBSIDIAN_POSTERS = process.env.OBSIDIAN_POSTERS || join(OBSIDIAN_VAULT, '价位图');
 /** 每日可买卖草稿。不是下单，也不进模拟引擎。 */
 export const OBSIDIAN_TRADES = process.env.OBSIDIAN_TRADES || join(OBSIDIAN_VAULT, '今日买卖');
-/** 期权推荐草稿。独立于推荐/模拟/实际操作，不是下单指令。缺文件不让每日任务失败。 */
-export const OBSIDIAN_OPTIONS = process.env.OBSIDIAN_OPTIONS || join(OBSIDIAN_VAULT, '期权推荐');
 /** Phase 0 纸上实验仓。独立账本，不写模拟操作，缺文件不让每日任务失败。 */
 export const OBSIDIAN_PAPER = process.env.OBSIDIAN_PAPER || join(OBSIDIAN_VAULT, '纸上实验');
 /** 每日观察板。足迹不是预测，不是下单。不进推荐/模拟/实际操作。缺文件不让每日任务失败。 */
 export const OBSIDIAN_WATCH = process.env.OBSIDIAN_WATCH || join(OBSIDIAN_VAULT, '每日观察');
 /** 奇门/算卦对照。研究娱乐，不是下单。不进推荐/模拟/实际操作。缺文件不让每日任务失败。 */
 export const OBSIDIAN_ORACLE = process.env.OBSIDIAN_ORACLE || join(OBSIDIAN_VAULT, '算卦');
-/** Agentic 操作意见。综合观察/算卦/期权/推荐，不是下单。不进推荐/模拟/实际操作。缺文件不让每日任务失败。 */
+/** Agentic 操作意见。综合观察/算卦/推荐，不是下单。不进推荐/模拟/实际操作。缺文件不让每日任务失败。 */
 export const OBSIDIAN_BRIEF = process.env.OBSIDIAN_BRIEF || join(OBSIDIAN_VAULT, 'Agentic意见');
 export const SIM_DIR = join(DATA_DIR, 'sim');
 export const ACTUALS_DIR = join(DATA_DIR, 'actuals');
