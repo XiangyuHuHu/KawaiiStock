@@ -41,11 +41,10 @@
         <button type="button" class="tab" data-tab="reports">叙事日报</button>
         <button type="button" class="tab" data-tab="strategy">策略</button>
         <button type="button" class="tab" data-tab="oracle">算卦</button>
-        <button type="button" class="tab" data-tab="compare">对比</button>
+        <button type="button" class="tab" data-tab="quant">决策</button>
         <button type="button" class="tab" data-tab="sim">模拟操作</button>
         <button type="button" class="tab" data-tab="paper">纸上实验</button>
         <button type="button" class="tab" data-tab="actuals">实际操作</button>
-        <button type="button" class="tab" data-tab="review">复盘</button>
       </nav>
     </div>
 
@@ -314,38 +313,38 @@
           </div>
         </article>
       </section>
-      <section class="tab-panel" id="panel-compare" hidden>
-        <section class="strip" id="compareStrip"></section>
-        <p class="status-line" id="compareStatus">Grok 独立规则 vs ChatGPT 手册。不是「Grok 是 ChatGPT 压缩版」。同时看规则差和持仓重合。</p>
-        <div class="account-bar compare-account-bar" id="compareAccountBar"></div>
+      <section class="tab-panel" id="panel-quant" hidden>
+        <p class="sim-banner">KawaiiStock 决策层 V1 · 观察和纸上记账 · liveTrading=false · autoTrade7811=false · 不下券商单</p>
         <article class="sheet">
           <div class="sheet-head">
             <div>
-              <p class="kicker">Rules</p>
-              <h2 id="compareTitle">规则对照</h2>
+              <p class="kicker">Decision cards</p>
+              <h2>决策卡</h2>
+              <p class="muted">状态、阶段、追踪止损和回补条件。研究默认，不是盈利承诺，也不给股数。</p>
+            </div>
+            <div class="head-actions">
+              <input id="quantSymbols" class="quant-symbols" type="text" value="MU,BE,MRVL,IREN,RKLB,ASTS,CRCL" aria-label="决策卡代码" />
+              <button type="button" class="text-btn" id="quantCardBtn">生成决策卡</button>
             </div>
           </div>
-          <div class="table-wrap" id="compareRules"></div>
+          <p class="status-line" id="quantStatus">输入代码后生成。没有行情时会写明缺口。</p>
+          <div id="quantCards" class="quant-grid"></div>
         </article>
-        <div class="compare-split">
-          <article class="sheet">
-            <p class="kicker">ChatGPT</p>
-            <h2>对照账本</h2>
-            <p class="muted" id="compareGptNote"></p>
-            <div class="table-wrap" id="compareGptBook"></div>
-          </article>
-          <article class="sheet">
-            <p class="kicker">Grok</p>
-            <h2>执行账本</h2>
-            <p class="muted" id="compareGrokNote"></p>
-            <div class="table-wrap" id="compareGrokBook"></div>
-          </article>
-        </div>
         <article class="sheet">
-          <p class="kicker">Overlap</p>
-          <h2>持仓重合</h2>
-          <p class="muted">两边都有、仅 ChatGPT、仅 Grok。数量不同会标出来。</p>
-          <div class="table-wrap" id="compareOverlap"></div>
+          <div class="sheet-head">
+            <div>
+              <p class="kicker">Owner 7811 paper</p>
+              <h2>真实持仓纸上账</h2>
+              <p class="muted">Day0 来自 Self-Directed ••••7811。JPMPD 记现金。只按决策层在研究价上记账。</p>
+            </div>
+            <div class="head-actions">
+              <button type="button" class="text-btn" id="quantSeedBtn">用 7811 持仓做 Day0</button>
+              <button type="button" class="text-btn" id="quantTickBtn">按决策层记一天</button>
+            </div>
+          </div>
+          <p class="status-line" id="quantPaperStatus">还没有纸上账。</p>
+          <div id="quantPaperSummary"></div>
+          <div class="table-wrap" id="quantFills"></div>
         </article>
       </section>
 
@@ -528,31 +527,6 @@
         </article>
       </section>
 
-      <section class="tab-panel" id="panel-review" hidden>
-        <p class="sim-banner">先看有没有执行 · 不看赚没赚 · HOLD / WATCH / REVIEW / 期权推荐不成交 · 不写进三本账</p>
-        <section class="strip" id="reviewStrip"></section>
-        <article class="sheet">
-          <div class="sheet-head">
-            <div>
-              <p class="kicker">Follow-through</p>
-              <h2>推荐 vs 模拟 vs 实际</h2>
-              <p class="muted">同一天、同一账户、同一代码、同一买卖方向。模拟跟推荐走；实际来自 Robinhood 成交。</p>
-            </div>
-            <div class="head-actions">
-              <button type="button" class="text-btn" id="reviewRefreshBtn">刷新</button>
-            </div>
-          </div>
-          <p class="status-line" id="reviewStatus">打开后对照三本账。</p>
-          <div class="layout-reports">
-            <aside class="report-index" id="reviewIndex"></aside>
-            <div>
-              <div class="table-wrap" id="reviewTable"></div>
-              <h3 class="option-skip-title">推荐没写、实际却成交</h3>
-              <div class="table-wrap" id="reviewExtras"></div>
-            </div>
-          </div>
-        </article>
-      </section>
     </main>
 
     <footer class="colophon">

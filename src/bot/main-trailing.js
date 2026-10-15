@@ -30,6 +30,12 @@ export const MAIN_TRAILING_PARAMS = {
     event: { k: 3, compare: [3, 3.5] },
     'high-vol': { k: 3, compare: [3, 3.5] }
   },
+  kVariantsByVolClass: {
+    growth: [2.5, 3],
+    cycle: [2.5, 3],
+    event: [2.5, 3, 3.5, 4],
+    'high-vol': [2.5, 3, 3.5, 4]
+  },
   hwmBandsPct: { normalBelow: 6, reduceBelow: 15, contractAt: 15 },
   themeReferencePct: [35, 45],
   nameReferencePct: { growth: [8, 12], event: [4, 8] }
@@ -48,6 +54,7 @@ const DETAILS = {
   'invalidation-breach': '现价触及或跌破入场失效价，观察建议 EXIT',
   'stop-breach': '现价触及或跌破已记录止损，观察建议 EXIT',
   'atr-trail-breach': '现价触及或跌破 ATR 追踪线，观察建议 EXIT',
+  'atr-trail-tightened': '衰竭或结构破坏后收紧了 k，现价触及更紧的 ATR 追踪线。不是因为 RSI 高，也不是因为涨多了',
   '2r-trim': '浮盈达到 +2R，参考兑现 20%–25%',
   '3r-second-tranche': '浮盈达到 +3R，且已做过 +2R 减仓，再参考兑现 20%–30%',
   '3r-combined': '浮盈达到 +3R，且尚未做 +2R 减仓，参考合并兑现 40%–55%（动作码 TRIM_50）',
@@ -175,19 +182,63 @@ export function equityCostBasisOf(input = {}, rows = input.positions || input.ho
   };
 }
 
+export function kVariantsOf(volClass) {
+  const table = MAIN_TRAILING_PARAMS.kVariantsByVolClass;
+  return (table[volClass] || table.growth).slice();
+}
+
+function kAcceptBand(volClass) {
+  if (volClass === 'high-vol' || volClass === 'event') return { min: 2.5, max: 4, ignored: 'outside-2.5-4' };
+  return { min: 2.5, max: 3.5, ignored: 'outside-2.5-3.5' };
+}
+
 export function resolveK(row) {
   const volClass = volClassOf(row);
   const spec = MAIN_TRAILING_PARAMS.kByVolClass[volClass];
+  const band = kAcceptBand(volClass);
+  const variants = kVariantsOf(volClass);
   const given = num(row.k ?? row.atrK);
-  if (given != null && given >= 2.5 - 1e-9 && given <= 3.5 + 1e-9) {
-    return { volClass, k: given, kCompare: spec.compare.slice(), kSource: 'input', kIgnored: null };
+  if (given != null && given >= band.min - 1e-9 && given <= band.max + 1e-9) {
+    return { volClass, k: given, kCompare: spec.compare.slice(), kVariants: variants, kSource: 'input', kIgnored: null };
   }
   return {
     volClass,
     k: spec.k,
     kCompare: spec.compare.slice(),
+    kVariants: variants,
     kSource: 'research-default',
-    kIgnored: given == null ? null : 'outside-2.5-3.5'
+    kIgnored: given == null ? null : band.ignored
+  };
+}
+
+export function givebackPctOf(entry, peak, last) {
+  if (!(entry > 0) || last == null) return null;
+  const peakPx = Math.max(num(peak) || 0, last);
+  if (!(peakPx > entry)) return null;
+  return round((peakPx - last) / (peakPx - entry) * 100, 4);
+}
+
+function tightenSpec(row, spec) {
+  const structureBreak = row.structureBreak === true;
+  const exhaustion = row.exhaustion === true || row.stage === '衰竭' || String(row.regime || '') === 'Exhaustion';
+  const meta = {
+    kTightened: null,
+    kBeforeTighten: spec.k,
+    tightenReason: null,
+    rsiIgnored: num(row.rsi) != null,
+    extensionIgnored: row.extended === true || row.upTooMuch === true
+  };
+  if (!structureBreak && !exhaustion) return { ...spec, ...meta };
+  const lower = spec.kVariants.filter((value) => value < spec.k - 1e-9);
+  if (!lower.length) return { ...spec, ...meta, tightenReason: 'k-at-floor' };
+  const k = lower[lower.length - 1];
+  return {
+    ...spec,
+    ...meta,
+    k,
+    kSource: 'tightened',
+    kTightened: k,
+    tightenReason: structureBreak ? 'structure-break' : 'exhaustion'
   };
 }
 
@@ -309,8 +360,16 @@ function shell(fields) {
     unrealizedR: fields.unrealizedR ?? null,
     k: fields.k ?? null,
     kCompare: fields.kCompare ?? null,
+    kVariants: fields.kVariants ?? null,
     kSource: fields.kSource ?? null,
     kIgnored: fields.kIgnored ?? null,
+    kTightened: fields.kTightened ?? null,
+    kBeforeTighten: fields.kBeforeTighten ?? null,
+    tightenReason: fields.tightenReason ?? null,
+    givebackPct: fields.givebackPct ?? null,
+    givebackChangesAction: false,
+    rsiIgnored: Boolean(fields.rsiIgnored),
+    extensionIgnored: Boolean(fields.extensionIgnored),
     prevStop: fields.prevStop ?? null,
     rawTrail: fields.rawTrail ?? null,
     suggestedTrailStop: fields.suggestedTrailStop ?? null,
@@ -369,8 +428,9 @@ export function suggestMainPosition(row = {}, context = {}) {
   const entry = entryOf(row);
   const invalidation = invalidationOf(row);
   const last = lastOf(row);
-  const kSpec = resolveK(row);
+  const kSpec = tightenSpec(row, resolveK(row));
   const trail = suggestedTrail(row, kSpec.k);
+  const givebackPct = givebackPctOf(entry, num(row.peakClose), last);
   const theme = themeOf(row);
   const r = entry != null && invalidation != null ? round(entry - invalidation, 4) : null;
   const unrealizedRaw = r > 0 && last != null ? (last - entry) / r : null;
@@ -393,6 +453,7 @@ export function suggestMainPosition(row = {}, context = {}) {
     ...kSpec,
     ...trail,
     ...weight,
+    givebackPct,
     missing
   };
 
@@ -421,7 +482,8 @@ export function suggestMainPosition(row = {}, context = {}) {
   }
   if (!(r > 0)) return shell({ ...base, suggestedAction: 'NO_TRADE', reason: 'non-positive-r' });
   if (trail.trailReady && trail.suggestedTrailStop != null && last <= trail.suggestedTrailStop) {
-    return shell({ ...base, suggestedAction: 'EXIT', reason: 'atr-trail-breach' });
+    const tightened = kSpec.kTightened != null;
+    return shell({ ...base, suggestedAction: 'EXIT', reason: tightened ? 'atr-trail-tightened' : 'atr-trail-breach' });
   }
   const trimmed = trimmed2R(row);
   if (unrealizedRaw + 1e-9 >= 3) {

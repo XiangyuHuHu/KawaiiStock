@@ -1,5 +1,6 @@
 import { stableHash } from './hash.js';
 import { assessMainTrailing, isMainTrailingInput, trailingActionChanges } from './main-trailing.js';
+import { quantPaperFromHeartbeat } from '../quant/paper-book.js';
 
 /** 午间：净值/止损/持仓指纹变化，或新的 -7% 警报，才醒来。
  *  main-trailing：上述之外，观察动作码相对上一份状态变化也醒来。现价晃动但动作码不变则沉默。 */
@@ -113,6 +114,7 @@ export function assessHeartbeat(input = {}, previous = null, options = {}) {
     });
   }
   const noChange = fingerprintUnchanged && newAlerts.length === 0 && trailingChanges.length === 0;
+  const quantPaper = input.quantPaper ? quantPaperFromHeartbeat(input) : null;
   return {
     no_change: noChange,
     silent: noChange,
@@ -131,6 +133,7 @@ export function assessHeartbeat(input = {}, previous = null, options = {}) {
     wakes,
     book,
     mainTrailing,
+    ...(quantPaper ? { quantPaper } : {}),
     liveTrading: false
   };
 }

@@ -4,7 +4,8 @@ import { bindOracleUi, loadOracle } from './oracle.js';
 import { bindPaperUi, loadPaper } from './paper.js';
 import { bindWatchUi, loadWatchlist } from './watchlist.js';
 import { bindBriefUi, loadBrief } from './brief.js';
-import { bindOpsUi, loadEvents, loadGuards, loadReview, renderOverviewEvents } from './ops.js';
+import { bindOpsUi, loadEvents, loadGuards, renderOverviewEvents } from './ops.js';
+import { bindQuantUi, loadQuantPaper } from './quant.js';
 import { rateText, stageRateOf, stageStripHtml, strategyLine } from './strategy-rate.js';
 
 const money2 = (value, fallback = '—') => {
@@ -52,7 +53,7 @@ function setActiveTab(id) {
     panel.classList.toggle('is-active', active);
     panel.hidden = !active;
   });
-  if (state.desk && id !== 'sim' && id !== 'compare' && id !== 'actuals' && id !== 'paper' && id !== 'guards' && id !== 'review' && id !== 'oracle') {
+  if (state.desk && id !== 'sim' && id !== 'quant' && id !== 'actuals' && id !== 'paper' && id !== 'guards' && id !== 'oracle') {
     renderOverview(state.desk);
   }
 }
@@ -60,12 +61,10 @@ function setActiveTab(id) {
 const state = {
   deskId: localStorage.getItem('kawaii-desk') || 'grok',
   accountId: localStorage.getItem('kawaii-account') || 'main',
-  compareAccountId: localStorage.getItem('kawaii-compare-account') || 'main',
   simAccountId: localStorage.getItem('kawaii-sim-account') || 'all',
   desk: null,
   quotes: {},
   draftRows: [],
-  compare: null,
   sim: null,
   actuals: [],
   events: null,
@@ -109,7 +108,7 @@ function renderDeskBar(desks = []) {
       <small>${row.kicker}</small>
     </button>`
   )).join('')
-    + `<button type="button" class="desk-chip is-link" data-tab="compare"><strong>对比</strong><small>规则 + 持仓</small></button>`
+    + `<button type="button" class="desk-chip is-link" data-tab="quant"><strong>决策</strong><small>状态 + 纸上账</small></button>`
     + `<button type="button" class="desk-chip is-link" data-tab="sim"><strong>模拟操作</strong><small>纸上跟单</small></button>`
     + `<button type="button" class="desk-chip is-link" data-tab="paper"><strong>纸上实验</strong><small>Phase 0</small></button>`
     + `<button type="button" class="desk-chip is-link" data-tab="actuals"><strong>实际操作</strong><small>手改 / 成交</small></button>`;
@@ -122,9 +121,12 @@ function renderDeskBar(desks = []) {
       loadAccount(state.accountId);
     });
   });
-  bar.querySelector('[data-tab="compare"]')?.addEventListener('click', () => {
-    setActiveTab('compare');
-    loadCompare();
+  bar.querySelector('[data-tab="quant"]')?.addEventListener('click', () => {
+    setActiveTab('quant');
+    loadQuantPaper().catch((error) => {
+      const status = document.getElementById('quantPaperStatus');
+      if (status) status.textContent = `纸上账读取失败：${error.message}`;
+    });
   });
   bar.querySelector('[data-tab="sim"]')?.addEventListener('click', () => {
     setActiveTab('sim');
@@ -542,87 +544,6 @@ function renderRecs(desk) {
   index.innerHTML = recs.map((row) => `<button type="button" class="report-link" data-date="${row.date}"><strong>${row.date}</strong></button>`).join('');
   index.querySelectorAll('.report-link').forEach((btn) => btn.addEventListener('click', () => show(btn.dataset.date)));
   show(recs[0].date);
-}
-
-function bookTable(rows, emptyText) {
-  if (!rows?.length) return `<p class="empty">${emptyText}</p>`;
-  return `<table>
-    <thead><tr><th>代码</th><th>名称</th><th class="num">数量</th><th>定位</th></tr></thead>
-    <tbody>${rows.map((row) => `<tr>
-      <td class="sym-cell">${row.symbol || ''}</td>
-      <td>${row.name || ''}</td>
-      <td class="num">${row.qty ?? '—'}</td>
-      <td>${row.role || ''}</td>
-    </tr>`).join('')}</tbody>
-  </table>`;
-}
-
-function renderCompare(data, accountId) {
-  const spec = data.accounts.find((row) => row.id === accountId) || data.accounts[0];
-  state.compareAccountId = spec.id;
-  localStorage.setItem('kawaii-compare-account', spec.id);
-  const stats = spec.overlap.stats;
-  document.getElementById('compareTitle').textContent = `${spec.label} · 规则对照`;
-  document.getElementById('compareStatus').textContent = spec.chatgpt.blurb && spec.grok.blurb
-    ? `${spec.label}：两边持仓重合 ${stats.bothCount} 只，数量不一致 ${stats.qtyMismatch} 只。`
-    : spec.label;
-  document.getElementById('compareStrip').innerHTML = [
-    ['重合', stats.bothCount],
-    ['仅 ChatGPT', stats.chatgptOnlyCount],
-    ['仅 Grok', stats.grokOnlyCount],
-    ['数量不一致', stats.qtyMismatch],
-    ['ChatGPT 持仓', stats.chatgptCount],
-    ['Grok 持仓', stats.grokCount]
-  ].map(([label, value]) => `<article><span>${label}</span><strong>${value}</strong></article>`).join('');
-
-  document.getElementById('compareAccountBar').innerHTML = data.accounts.map((row) => (
-    `<button type="button" class="account-chip ${row.id === spec.id ? 'is-active' : ''}" data-id="${row.id}">${row.label}</button>`
-  )).join('');
-  document.querySelectorAll('#compareAccountBar .account-chip').forEach((btn) => {
-    btn.addEventListener('click', () => renderCompare(data, btn.dataset.id));
-  });
-
-  document.getElementById('compareRules').innerHTML = `<table>
-    <thead><tr><th>维度</th><th>ChatGPT</th><th>Grok</th></tr></thead>
-    <tbody>${spec.rows.map((row) => `<tr><th>${row.key}</th><td>${row.chatgpt}</td><td>${row.grok}</td></tr>`).join('')}</tbody>
-  </table>`;
-  document.getElementById('compareGptNote').textContent = spec.chatgpt.holdings?.note || spec.chatgpt.blurb || '';
-  document.getElementById('compareGrokNote').textContent = spec.grok.holdings?.note || spec.grok.blurb || '';
-  document.getElementById('compareGptBook').innerHTML = bookTable(spec.chatgpt.holdings?.positions, '无持仓表。Agentic 对照文件是策略副本。');
-  document.getElementById('compareGrokBook').innerHTML = bookTable(spec.grok.holdings?.positions, '空仓，等待扫描或手改。');
-
-  const overlapRows = [
-    ...spec.overlap.both.map((row) => `<tr>
-      <td class="sym-cell">${row.symbol}</td>
-      <td>两边都有</td>
-      <td class="num">${row.chatgptQty ?? '—'}</td>
-      <td class="num ${row.qtyMatch ? '' : 'neg'}">${row.grokQty ?? '—'}</td>
-      <td>${row.qtyMatch ? '数量一致' : '数量不同'}</td>
-    </tr>`),
-    ...spec.overlap.chatgptOnly.map((row) => `<tr>
-      <td class="sym-cell">${row.symbol}</td>
-      <td>仅 ChatGPT</td>
-      <td class="num">${row.qty ?? '—'}</td>
-      <td class="num">—</td>
-      <td>${row.role || ''}</td>
-    </tr>`),
-    ...spec.overlap.grokOnly.map((row) => `<tr>
-      <td class="sym-cell">${row.symbol}</td>
-      <td>仅 Grok</td>
-      <td class="num">—</td>
-      <td class="num">${row.qty ?? '—'}</td>
-      <td>${row.role || ''}</td>
-    </tr>`)
-  ];
-  document.getElementById('compareOverlap').innerHTML = overlapRows.length
-    ? `<table><thead><tr><th>代码</th><th>归属</th><th class="num">ChatGPT 数量</th><th class="num">Grok 数量</th><th>说明</th></tr></thead><tbody>${overlapRows.join('')}</tbody></table>`
-    : '<p class="empty">两边都还没有可比较的持仓。</p>';
-}
-
-async function loadCompare() {
-  const data = await fetch('/api/compare').then((r) => r.json());
-  state.compare = data;
-  renderCompare(data, state.compareAccountId);
 }
 
 function leaderLabel(leader) {
@@ -1269,7 +1190,12 @@ async function main() {
   }, 1000);
   document.querySelectorAll('.tab').forEach((btn) => btn.addEventListener('click', () => {
     setActiveTab(btn.dataset.tab);
-    if (btn.dataset.tab === 'compare') loadCompare();
+    if (btn.dataset.tab === 'quant') {
+      loadQuantPaper().catch((error) => {
+        const status = document.getElementById('quantPaperStatus');
+        if (status) status.textContent = `纸上账读取失败：${error.message}`;
+      });
+    }
     if (btn.dataset.tab === 'sim') loadSim();
     if (btn.dataset.tab === 'paper') {
       loadPaper().catch((error) => {
@@ -1282,10 +1208,6 @@ async function main() {
     if (btn.dataset.tab === 'guards') loadGuards().catch((error) => {
       const status = document.getElementById('guardStatus');
       if (status) status.textContent = `止损看板失败：${error.message}`;
-    });
-    if (btn.dataset.tab === 'review') loadReview(state.deskId).catch((error) => {
-      const status = document.getElementById('reviewStatus');
-      if (status) status.textContent = `复盘失败：${error.message}`;
     });
     if (btn.dataset.tab === 'universe') ensureScreenerLoaded();
     if (btn.dataset.tab === 'watch') loadWatchlist().catch((error) => {
@@ -1332,9 +1254,9 @@ async function main() {
   bindWatchUi();
   bindBriefUi();
   bindOpsUi();
+  bindQuantUi();
 
   await loadAccount(state.accountId);
-  loadCompare().catch(() => {});
   await loadReports();
 }
 

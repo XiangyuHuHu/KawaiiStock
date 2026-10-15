@@ -21,16 +21,6 @@ function statusLabel(status) {
   }[status] || status;
 }
 
-function followLabel(follow) {
-  return {
-    both: '两边都跟了',
-    'sim-only': '只模拟跟了',
-    'actual-only': '只实际跟了',
-    miss: '都没跟',
-    'extra-actual': '推荐没写'
-  }[follow] || follow;
-}
-
 function setGuardBrand() {
   const kicker = document.getElementById('brandKicker');
   const title = document.getElementById('brandTitle');
@@ -40,17 +30,6 @@ function setGuardBrand() {
   if (title) title.textContent = '止损 / 未完成订单';
   if (sub) sub.textContent = '战术 ••••3469 和 Agentic ••••7983。未成交止损不是成交。不是下单。';
   if (pill) pill.textContent = 'STOPS';
-}
-
-function setReviewBrand() {
-  const kicker = document.getElementById('brandKicker');
-  const title = document.getElementById('brandTitle');
-  const sub = document.getElementById('brandSub');
-  const pill = document.getElementById('stancePill');
-  if (kicker) kicker.textContent = '对照 · 执行';
-  if (title) title.textContent = '推荐 vs 模拟 vs 实际';
-  if (sub) sub.textContent = '先看有没有跟上。HOLD / WATCH / REVIEW 不算要成交。';
-  if (pill) pill.textContent = 'REVIEW';
 }
 
 function renderEventCards(items, mountId) {
@@ -197,74 +176,6 @@ function renderGuards(pack) {
   }
 }
 
-function renderReview(pack, date) {
-  setReviewBrand();
-  const status = document.getElementById('reviewStatus');
-  const strip = document.getElementById('reviewStrip');
-  const index = document.getElementById('reviewIndex');
-  const table = document.getElementById('reviewTable');
-  const extras = document.getElementById('reviewExtras');
-  const totals = pack.totals || {};
-  if (status) {
-    status.textContent = pack.error
-      ? pack.error
-      : `推荐要动 ${totals.asked ?? 0} 笔。模拟跟上 ${totals.simRate ?? '—'}%，实际跟上 ${totals.actualRate ?? '—'}%。${pack.note || ''}`;
-  }
-  if (strip) {
-    strip.innerHTML = [
-      ['要成交', totals.asked ?? 0],
-      ['两边都跟', totals.both ?? 0],
-      ['只模拟', totals.simOnly ?? 0],
-      ['都没跟', totals.actualMiss ?? 0],
-      ['推荐没写', totals.extraActuals ?? 0]
-    ].map(([k, v]) => `<article><span>${k}</span><strong>${v}</strong></article>`).join('');
-  }
-  const days = pack.days || [];
-  if (!days.length) {
-    if (index) index.innerHTML = '<p class="empty">还没有推荐操作日档。</p>';
-    if (table) table.innerHTML = '';
-    return;
-  }
-  const showDate = date || days[0].date;
-  const day = days.find((row) => row.date === showDate) || days[0];
-  if (index) {
-    index.innerHTML = days.map((row) => (
-      `<button type="button" class="report-link ${row.date === day.date ? 'is-active' : ''}" data-date="${row.date}"><strong>${row.date}</strong><span>要动 ${row.asked} · 实际 ${row.actualFills}</span></button>`
-    )).join('');
-    index.querySelectorAll('.report-link').forEach((btn) => {
-      btn.addEventListener('click', () => renderReview(pack, btn.dataset.date));
-    });
-  }
-  const rows = day.rows || [];
-  if (table) {
-    table.innerHTML = rows.length
-      ? `<table><thead><tr><th>账户</th><th>代码</th><th>推荐</th><th>模拟</th><th>实际</th><th>对照</th></tr></thead><tbody>${
-        rows.map((row) => `<tr class="follow-${row.follow}">
-          <td>${ACCOUNT_LABELS[row.accountId] || row.accountId}</td>
-          <td class="sym-cell">${row.symbol}</td>
-          <td><span class="action-tag ${row.action}">${row.action}</span></td>
-          <td>${row.sim ? `${row.sim.action} ${row.sim.qty ?? ''} @ ${money2(row.sim.price)}` : '—'}</td>
-          <td>${row.actual ? `${row.actual.side} ${row.actual.qty ?? ''} @ ${money2(row.actual.price)}` : '—'}</td>
-          <td>${followLabel(row.follow)}</td>
-        </tr>`).join('')
-      }</tbody></table>`
-      : '<p class="empty">这一天推荐没有 BUY/ADD/SELL/TRIM/EXIT。</p>';
-  }
-  if (extras) {
-    extras.innerHTML = (day.extras || []).length
-      ? `<table><thead><tr><th>账户</th><th>代码</th><th>实际</th><th class="num">数量</th><th class="num">价格</th></tr></thead><tbody>${
-        day.extras.map((row) => `<tr>
-          <td>${ACCOUNT_LABELS[row.accountId] || row.accountId}</td>
-          <td class="sym-cell">${row.symbol}</td>
-          <td><span class="action-tag ${row.action}">${row.action}</span></td>
-          <td class="num">${row.qty ?? '—'}</td>
-          <td class="num">${money2(row.price)}</td>
-        </tr>`).join('')
-      }</tbody></table>`
-      : '<p class="empty">没有「推荐没写、实际却成交」的记录。</p>';
-  }
-}
-
 export async function loadEvents({ refresh = false } = {}) {
   const pack = await fetch(`/api/events${refresh ? '?refresh=1' : ''}`).then((r) => r.json());
   return pack;
@@ -282,27 +193,11 @@ export async function loadGuards() {
   return guards;
 }
 
-export async function loadReview(deskId = 'grok') {
-  const advisor = deskId === 'chatgpt' ? 'chatgpt' : 'grok';
-  const status = document.getElementById('reviewStatus');
-  if (status) status.textContent = '正在对照推荐操作、模拟操作和实际操作。';
-  const pack = await fetch(`/api/review?advisor=${advisor}`).then((r) => r.json());
-  renderReview(pack);
-  return pack;
-}
-
 export function bindOpsUi() {
   document.getElementById('guardRefreshBtn')?.addEventListener('click', () => {
     loadGuards().catch((error) => {
       const status = document.getElementById('guardStatus');
       if (status) status.textContent = `止损看板失败：${error.message}`;
-    });
-  });
-  document.getElementById('reviewRefreshBtn')?.addEventListener('click', () => {
-    const desk = document.body.dataset.desk || 'grok';
-    loadReview(desk).catch((error) => {
-      const status = document.getElementById('reviewStatus');
-      if (status) status.textContent = `复盘失败：${error.message}`;
     });
   });
 }

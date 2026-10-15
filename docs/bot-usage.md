@@ -45,7 +45,7 @@
 
 醒来仍是退出码 10，沉默是 0。三条里中一条就醒：建议动作码相对上一份状态变了；新的 −7% 警报；净值、数量或止损指纹变了。现价在同一动作码里晃动，保持沉默。只改 `hwmNav` 而动作码不变，也沉默。状态文件默认写到 `data/bot/main-trailing.json`，不和午间指纹混用。`--out` 可以改路径。脚本即使用退出码 0 也会覆写这份 JSON。
 
-规则摘要见 [main-account-trailing-v1.md](main-account-trailing-v1.md)。
+规则摘要见 [main-account-trailing-v1.md](main-account-trailing-v1.md)。决策卡和 7811 纸上账见 [quant-v1.md](quant-v1.md)。输入里没有 `quantPaper` 时，心跳不附带纸上账，沉默条件也不变。纸上账不下券商单。
 
 ### 7983 预筛模块（不进每日表面）
 

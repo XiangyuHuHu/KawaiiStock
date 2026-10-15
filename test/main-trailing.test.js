@@ -519,12 +519,9 @@ test('7983 prefilter defaults and the 3469/7983 fill map stay unchanged', async 
     maxPremium: 5
   });
   const sim = await readFile(new URL('../src/sim.js', import.meta.url), 'utf8');
-  const review = await readFile(new URL('../src/review.js', import.meta.url), 'utf8');
   const prefilter = await readFile(new URL('../src/bot/options-prefilter.js', import.meta.url), 'utf8');
-  for (const source of [sim, review]) {
-    assert.match(source, /key === '7983'\) return 'agentic'/);
-    assert.match(source, /key === '3469'\) return 'tactical'/);
-  }
+  assert.match(sim, /key === '7983'\) return 'agentic'/);
+  assert.match(sim, /key === '3469'\) return 'tactical'/);
   assert.match(prefilter, /0DTE\/1DTE 不会进入候选/);
   assert.match(prefilter, /short-dated-blocked/);
   assert.equal(prefilter.includes('TRIM_25'), false);

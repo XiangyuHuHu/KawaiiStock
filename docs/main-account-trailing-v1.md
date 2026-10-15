@@ -107,3 +107,5 @@ A 20% decline alone is `NO_TRADE`. Rebuy requires trend, breakout, or panic-reco
 3. 净值、数量或止损指纹变了。指纹仍不含现价。
 
 现价在同一动作码里晃动：退出码 0。只抬高 `hwmNav` 而动作码不变：也是 0。状态默认写到 `data/bot/main-trailing.json`。字段说明见 [bot-usage.md](bot-usage.md)。
+
+状态机、多周期确认、高波动 k 格子、峰值回吐和回补闸门在 [quant-v1.md](quant-v1.md)。那一层仍调用这里的追踪结果，不另写一套止盈。
