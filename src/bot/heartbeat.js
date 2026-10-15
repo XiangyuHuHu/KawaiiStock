@@ -1,6 +1,8 @@
 import { stableHash } from './hash.js';
+import { assessMainTrailing, isMainTrailingInput, trailingActionChanges } from './main-trailing.js';
 
-/** routine-prompts-us-v1.3：午间只在净值/止损/持仓指纹变化，或出现新的 -7% 警报时醒来。 */
+/** 午间：净值/止损/持仓指纹变化，或新的 -7% 警报，才醒来。
+ *  main-trailing：上述之外，观察动作码相对上一份状态变化也醒来。现价晃动但动作码不变则沉默。 */
 export const ALERT_DROP_PCT = -7;
 
 function num(value) {
@@ -88,6 +90,7 @@ function middayFingerprint(book) {
 }
 
 export function assessHeartbeat(input = {}, previous = null, options = {}) {
+  const routine = input.routine || options.routine || 'midday';
   const book = hasBook(input) ? normalizeBook(input) : null;
   const stateHash = input.stateHash || (input.state ? stableHash(input.state) : null);
   const fingerprint = middayFingerprint(book);
@@ -95,23 +98,39 @@ export function assessHeartbeat(input = {}, previous = null, options = {}) {
   const alerts = alertSymbols(input);
   const seen = new Set(previous?.alerts || []);
   const newAlerts = alerts.filter((symbol) => !seen.has(symbol));
+  const mainTrailing = isMainTrailingInput(input, routine) ? assessMainTrailing(input) : null;
+  const trailingChanges = trailingActionChanges(mainTrailing, previous);
   const wakes = [];
   if (!fingerprintUnchanged) pushWake(wakes, { code: 'fingerprint', detail: previous ? '净值、止损或持仓指纹变了' : '没有上一份指纹' });
   for (const symbol of newAlerts) pushWake(wakes, { code: 'alert-7', symbol });
-  const noChange = fingerprintUnchanged && newAlerts.length === 0;
+  for (const change of trailingChanges) {
+    pushWake(wakes, {
+      code: 'trailing-action',
+      symbol: change.symbol,
+      from: change.from,
+      to: change.to,
+      detail: '主账户观察建议的动作变了'
+    });
+  }
+  const noChange = fingerprintUnchanged && newAlerts.length === 0 && trailingChanges.length === 0;
   return {
     no_change: noChange,
     silent: noChange,
-    routine: input.routine || options.routine || 'midday',
+    routine,
     checkedAt: options.now || new Date().toISOString(),
     fingerprint,
     fingerprint_unchanged: fingerprintUnchanged,
     alerts,
     new_alerts: newAlerts,
     stateHash,
-    reason: noChange ? '净值、止损和持仓指纹未变，且没有新的 -7% 警报' : [...new Set(wakes.map((wake) => wake.code))].join(','),
+    reason: noChange
+      ? (mainTrailing
+        ? '净值、止损和持仓指纹未变，没有新的 -7% 警报，观察动作码也没变'
+        : '净值、止损和持仓指纹未变，且没有新的 -7% 警报')
+      : [...new Set(wakes.map((wake) => wake.code))].join(','),
     wakes,
     book,
+    mainTrailing,
     liveTrading: false
   };
 }

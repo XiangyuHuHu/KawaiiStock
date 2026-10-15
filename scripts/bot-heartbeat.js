@@ -14,9 +14,10 @@ async function readJson(path) {
 }
 
 const inputPath = arg('--input');
-const outPath = arg('--out') || 'data/bot/heartbeat.json';
+const routineArg = arg('--routine');
+const outPath = arg('--out') || (routineArg === 'main-trailing' ? 'data/bot/main-trailing.json' : 'data/bot/heartbeat.json');
 const input = inputPath ? await readJson(inputPath) : {};
-if (arg('--routine')) input.routine = arg('--routine');
+if (routineArg) input.routine = routineArg;
 if (arg('--state')) input.state = await readJson(arg('--state'));
 const previous = inputPath === outPath ? null : await readJson(outPath).catch((error) => {
   if (error.code === 'ENOENT') return null;
