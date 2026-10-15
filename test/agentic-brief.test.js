@@ -28,7 +28,6 @@ function pack(extra = {}) {
       universeSnapshot: { rows: [{ symbol: 'TOST', stage: 'reversal-extension', stageLabel: 'Reversal Extension' }] },
       featured: { up: [], down: [] }
     },
-    options: { ok: true, date: day, ideas: [], buys: [] },
     recs: {
       date: day,
       accounts: [{
@@ -96,17 +95,4 @@ test('wedge-drop on a fresh holding is EXIT, stale holdings are REVIEW', () => {
   assert.equal(stale.actions.exit.length, 0);
   assert.equal(stale.actions.review[0].symbol, 'OKLO');
   assert.equal(stale.stance, 'REVIEW');
-});
-
-test('eligible put blocks a new long even when watch and recs agree', () => {
-  const out = pack({
-    options: {
-      ok: true,
-      date: day,
-      ideas: [{ symbol: 'ASX', eligible: true, action: 'BUY_PUT' }],
-      buys: [{ symbol: 'ASX', eligible: true, action: 'BUY_PUT' }]
-    }
-  });
-  assert.equal(out.actions.consider.length, 0);
-  assert.match(out.actions.watch[0].reason, /Put/);
 });

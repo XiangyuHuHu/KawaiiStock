@@ -9,7 +9,6 @@ const paths=[
   '/api/tape?desk=chatgpt&account=tactical','/api/stocks?pageSize=1','/api/stocks?market=cn&pageSize=1','/api/universe',
   '/api/reports','/api/recommendations?advisor=chatgpt','/api/recommendations?advisor=grok',
   '/api/actuals?advisor=chatgpt','/api/actuals?advisor=grok',
-  '/api/options/collector','/api/options/sources','/api/options/history','/api/options/strategies','/api/options','/api/options/forward',
   '/api/oracle/current?scope=all','/api/oracle/symbols?market=us','/api/oracle/symbols?market=cn',
   '/api/oracle/accuracy?market=us','/api/oracle/accuracy?market=cn','/api/oracle',
   '/api/agentic-brief','/api/guards','/api/events','/api/review?advisor=chatgpt','/api/review?advisor=grok',
@@ -42,10 +41,8 @@ async function probe(path){
   }catch(e){results.push({path,http:null,ms:Date.now()-start,error:e.name==='TimeoutError'?'45 秒超时':e.message});console.log(JSON.stringify(results.at(-1)));}
 }
 const start=Date.now();
-await probe('/api/options/collector');
 let cursor=0;
 await Promise.all(Array.from({length:4},async()=>{while(cursor<paths.length){const path=paths[cursor++];await probe(path);}}));
-await probe('/api/options/collector');
 const server=await readFile(join(ROOT,'server.js'),'utf8');
 const routeInventory=[...new Set([...server.matchAll(/url\.pathname === '([^']+)'/g)].map(m=>m[1]))];
 const report={startedAt:new Date(start).toISOString(),completedAt:new Date().toISOString(),base,readOnly:true,

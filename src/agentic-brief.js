@@ -1,12 +1,11 @@
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { asOfStamp, OBSIDIAN_BRIEF, OBSIDIAN_WATCH, REPORTS_DIR, recsDir, todayStamp } from './paths.js';
-import { loadOptionsFile } from './options/engine.js';
 import { holdingsAge, loadAccounts, loadHoldings } from './holdings.js';
 import { castSymbol } from './oracle/symbols.js';
 import { currentQimenChart, qimenSymbol } from './oracle/qimen-current.js';
 
-export const BRIEF_NOTE = 'Agentic 操作意见。综合每日观察、算卦、期权和当日推荐，不是下单指令。不写进推荐操作 / 模拟操作 / 实际操作。默认不下单。缺文件不让每日任务失败。';
+export const BRIEF_NOTE = 'Agentic 操作意见。综合每日观察、算卦和当日推荐，不是下单指令。不写进推荐操作 / 模拟操作 / 实际操作。默认不下单。缺文件不让每日任务失败。期权不进这份意见。';
 const SETUP = new Set(['wedge-pop', 'ema-crossback', 'base-n-break']);
 const STAGE_LABEL = {
   'reversal-extension': 'Reversal Extension',
@@ -18,8 +17,6 @@ const STAGE_LABEL = {
 };
 const EXIT_STAGES = new Set(['wedge-drop']);
 const TRIM_STAGES = new Set(['exhaustion-extension']);
-const CALLS = new Set(['BUY_CALL', 'CALL_SPREAD']);
-const PUTS = new Set(['BUY_PUT', 'PUT_SPREAD']);
 const OPEN_REC = new Set(['BUY', 'ADD']);
 const CLOSE_REC = new Set(['EXIT', 'SELL']);
 
@@ -78,15 +75,6 @@ function watchLean(row) {
   return 'none';
 }
 
-function optionLean(row) {
-  if (!row) return { lean: 'none', eligible: false, action: null };
-  const action = row.eligible ? row.action : (row.originalAction || row.action);
-  if (CALLS.has(action)) return { lean: 'up', eligible: Boolean(row.eligible), action };
-  if (PUTS.has(action)) return { lean: 'down', eligible: Boolean(row.eligible), action };
-  if (action === 'STRADDLE') return { lean: 'wait', eligible: Boolean(row.eligible), action };
-  return { lean: 'none', eligible: false, action: action || 'NO_TRADE' };
-}
-
 function recLean(row) {
   if (!row) return 'none';
   const action = String(row.action || '').toUpperCase();
@@ -129,15 +117,6 @@ function recMap(book) {
   return map;
 }
 
-function optionMap(options) {
-  const map = new Map();
-  for (const row of [...(options?.ideas || []), ...(options?.buys || [])]) {
-    const symbol = upper(row.symbol);
-    if (symbol) map.set(symbol, row);
-  }
-  return map;
-}
-
 function chasePct(row) {
   const n = Number(row?.changePct);
   return Number.isFinite(n) ? n : null;
@@ -146,7 +125,6 @@ function chasePct(row) {
 export function composeAgenticBrief({
   date,
   watch = null,
-  options = null,
   recs = null,
   holdings = null,
   meiBySymbol = {},
@@ -157,7 +135,6 @@ export function composeAgenticBrief({
   const watchMap = indexWatch(watch);
   const recsBook = agenticBook(recs);
   const recsBySymbol = recMap(recsBook);
-  const optionBySymbol = optionMap(options);
   const positions = (holdings?.positions || [])
     .map((row) => ({ ...row, symbol: upper(row.symbol), qty: Number(row.qty) }))
     .filter((row) => row.symbol && row.qty > 0);
@@ -166,8 +143,6 @@ export function composeAgenticBrief({
   const holdingAge = holdingsAge(holdings, now);
   const staleHoldings = !asOf || asOf < day;
   const recsMissing = !recs || recs.error || !recsBook;
-  const optionsStale = !options?.ok || (options.date && options.date < day) || options.cached;
-  const eligibleBuys = (options?.buys || options?.ideas || []).filter((row) => row.eligible);
   const regime = watch?.regime || 'unknown';
 
   const scanned = (watch?.universeSnapshot?.rows || []).map((row) => upper(row.symbol)).filter(Boolean);
@@ -178,22 +153,19 @@ export function composeAgenticBrief({
     ...(watch?.boards?.setups || []).map((row) => upper(row.symbol)),
     ...(watch?.featured?.up || []).map((row) => upper(row.symbol)),
     ...(watch?.featured?.down || []).map((row) => upper(row.symbol)),
-    ...recsBySymbol.keys(),
-    ...eligibleBuys.map((row) => upper(row.symbol))
+    ...recsBySymbol.keys()
   ].filter(Boolean));
 
   const votes = [...focus].map((symbol) => {
     const watchRow = watchMap.get(symbol) || null;
     const recRow = recsBySymbol.get(symbol) || null;
-    const optionRow = optionBySymbol.get(symbol) || null;
     const mei = meiBySymbol[symbol] || null;
     const qi = qiBySymbol[symbol] || null;
     const held = heldSet.has(symbol);
-    const option = optionLean(optionRow);
     const oracle = combineOracle(mei, qi);
     const watchDir = watchLean(watchRow);
     const recDir = recLean(recRow);
-    const hard = [watchDir, recDir, option.eligible ? option.lean : 'none'].filter((d) => d === 'up' || d === 'down');
+    const hard = [watchDir, recDir].filter((d) => d === 'up' || d === 'down');
     const agreeUp = hard.filter((d) => d === 'up').length;
     const agreeDown = hard.filter((d) => d === 'down').length;
     return {
@@ -203,9 +175,6 @@ export function composeAgenticBrief({
       last: watchRow?.last ?? positions.find((row) => row.symbol === symbol)?.last ?? null,
       watch: watchDir,
       rec: recDir,
-      option: option.lean,
-      optionEligible: option.eligible,
-      optionAction: option.action,
       oracle,
       mei: oracleLean(mei),
       qimen: oracleLean(qi),
@@ -262,7 +231,7 @@ export function composeAgenticBrief({
 
   const candidates = votes
     .filter((row) => !row.held)
-    .filter((row) => row.watch === 'up' || row.rec === 'up' || (row.optionEligible && row.option === 'up'))
+    .filter((row) => row.watch === 'up' || row.rec === 'up')
     .sort((a, b) => (b.score ?? 0) - (a.score ?? 0) || b.agreeUp - a.agreeUp);
 
   const opens = [];
@@ -275,7 +244,6 @@ export function composeAgenticBrief({
     if (!recsMissing && row.rec === 'down') blockers.push('当日推荐要退出或避开');
     if (!recsMissing && row.rec !== 'up' && row.rec !== 'wait' && row.rec !== 'none') blockers.push(`当日推荐是 ${row.recAction || row.rec}`);
     if (!recsMissing && row.rec !== 'up') blockers.push('每日任务没有给这只开新仓');
-    if (row.optionEligible && row.option === 'down') blockers.push('期权合格信号是买 Put，与开多冲突');
     if (row.changePct != null && row.changePct >= 15) blockers.push(`今日已涨 ${row.changePct.toFixed(1)}%，禁止追高`);
     if (positions.length + opens.length >= 3) blockers.push('Agentic 已有 1–3 仓上限');
     const buy = blockers.length === 0 && row.watch === 'up' && !recsMissing && row.rec === 'up';
@@ -326,18 +294,6 @@ export function composeAgenticBrief({
       counts: watch.counts || null
     } : { missing: true },
     oracle: { note: '梅花个股卦 + 当前时盘奇门宫位。娱乐对照，不是胜率，不能单独开仓。' },
-    options: options?.ok
-      ? {
-        date: options.date,
-        generatedAt: options.generatedAt || null,
-        scanned: options.scanned,
-        buyCount: options.buys?.length ?? 0,
-        cached: Boolean(options.cached),
-        stale: Boolean(optionsStale),
-        emptyScan: Number(options.scanned) === 0,
-        emptyNote: Number(options.scanned) === 0 ? '期权扫描为 0，不把空扫描当成看空。' : null
-      }
-      : { missing: true },
     recs: recsMissing
       ? { missing: true, date: recs?.date || null, generatedAt: recs?.generatedAt || null }
       : { date: recs.date, generatedAt: recs.generatedAt || null, priorities: (recsBook.priorities || []).map((row) => ({ symbol: row.symbol, action: row.action, title: row.title })) }
@@ -375,7 +331,7 @@ export function composeAgenticBrief({
     rules: [
       '每日观察足迹不是下单；新开要已确认的 Wedge Pop / EMA Crossback / Base n Break。分数 ≥80 只是门槛之一，没通过时只写一条具体原因。',
       '算卦（梅花/奇门）只作对照，不能单独产生买入。',
-      '期权只有校验通过的合格候选才算信号；缺买卖盘时间就当没有期权信号。',
+      '期权不进入这份意见。',
       '必须有当日推荐操作，才能把「每日任务结论」算进新开。',
       '禁止追高（当日涨幅 ≥15%）、禁止摊低。止损及时，止盈可以慢。',
       '实盘只许 Agentic，且要过 Risk Gateway、带券商止损。这份文件本身不是订单。'
@@ -390,7 +346,6 @@ function mdRow(row) {
     row.score != null ? `${row.score}分` : null,
     `观察 ${leanLabel(row.watch)}`,
     `推荐 ${leanLabel(row.rec)}`,
-    `期权 ${leanLabel(row.option)}${row.optionEligible ? '（合格）' : ''}`,
     `算卦 ${leanLabel(row.oracle)}`
   ].filter(Boolean);
   return `- ${bits.join(' · ')}\n  ${row.reason}`;
@@ -423,7 +378,7 @@ stance: ${pack.stance}
 - 持仓快照 ${pack.holdings?.asOf || '未知'}${pack.holdings?.stale ? '（不是今天，先核对）' : ''} · ${pack.holdings?.positionCount ?? 0} 个标的
 - 每日观察 ${pack.sources?.watch?.missing ? '缺失' : pack.sources.watch.date + ' · ' + (pack.sources.watch.regime || '')}
 - 推荐操作 ${pack.sources?.recs?.missing ? '当日未落盘' : pack.sources.recs.date}
-- 期权 ${pack.sources?.options?.missing ? '缺失' : `${pack.sources.options.date} · 合格买入 ${pack.sources.options.buyCount}`}
+- 算卦只作对照，不单独开仓
 
 ${blocks.map(([title, rows]) => `## ${title}\n\n${rows?.length ? rows.map(mdRow).join('\n') : '- 无'}`).join('\n\n')}
 
@@ -445,14 +400,13 @@ export async function writeAgenticBrief(pack) {
   return { dir: OBSIDIAN_BRIEF, date: pack.date, file: pack.date };
 }
 
-function collectSymbols({ watch, options, recs, holdings }) {
+function collectSymbols({ watch, recs, holdings }) {
   const symbols = new Set();
   for (const row of holdings?.positions || []) symbols.add(upper(row.symbol));
   for (const list of Object.values(watch?.boards || {})) for (const row of list || []) symbols.add(upper(row.symbol));
   for (const list of Object.values(watch?.featured || {})) for (const row of list || []) symbols.add(upper(row.symbol));
   for (const row of recs?.accounts?.find((item) => item.id === 'agentic')?.recommendations || []) symbols.add(upper(row.symbol));
   for (const row of recs?.accounts?.find((item) => item.id === 'agentic')?.opportunities || []) symbols.add(upper(row.symbol));
-  for (const row of options?.ideas || []) symbols.add(upper(row.symbol));
   symbols.delete('');
   return [...symbols];
 }
@@ -466,14 +420,11 @@ function newerThan(upstreamAt, briefAt) {
 export function briefUpstreamStatus(brief, upstream = {}) {
   const notes = [];
   if (newerThan(upstream.watch?.generatedAt, brief?.generatedAt)) notes.push('每日观察生成时间新于这份意见');
-  if (newerThan(upstream.options?.generatedAt, brief?.generatedAt)) notes.push('期权扫描生成时间新于这份意见');
   if (newerThan(upstream.recs?.generatedAt, brief?.generatedAt)) notes.push('推荐操作生成时间新于这份意见');
   if (upstream.watch?.scanned != null && brief?.sources?.watch?.scanned != null && upstream.watch.scanned !== brief.sources.watch.scanned) {
     notes.push(`观察去重扫描 ${upstream.watch.scanned}，意见里记的是 ${brief.sources.watch.scanned}`);
   }
-  if (Number(upstream.options?.scanned) === 0) notes.push('期权扫描为 0，不把空扫描当成看空');
-  const upstreamStale = notes.some((line) => !line.startsWith('期权扫描为 0'));
-  return { upstreamStale, upstreamNotes: notes };
+  return { upstreamStale: notes.length > 0, upstreamNotes: notes };
 }
 
 export async function loadAgenticBrief(date) {
@@ -497,22 +448,19 @@ export async function loadAgenticBriefWithFreshness(date) {
   const brief = await loadAgenticBrief(date);
   if (!brief?.date) return brief;
   const watch = await readJson(join(OBSIDIAN_WATCH, `${brief.date}.json`));
-  const options = await loadOptionsFile(brief.date);
   const recs = await readJson(join(recsDir('grok'), `${brief.date}.json`));
-  return { ...brief, ...briefUpstreamStatus(brief, { watch, options, recs }) };
+  return { ...brief, ...briefUpstreamStatus(brief, { watch, recs }) };
 }
 
 export async function buildAndWriteAgenticBrief({
   date,
   watchlist,
-  options,
   recs,
   holdings,
   now = new Date()
 } = {}) {
   const day = date || todayStamp(now);
   const watch = watchlist || await readJson(join(OBSIDIAN_WATCH, `${day}.json`));
-  const optionPack = options || await loadOptionsFile(day) || await loadOptionsFile();
   const recPack = recs === undefined ? await readJson(join(recsDir('grok'), `${day}.json`)) : recs;
   let book = holdings;
   if (!book) {
@@ -535,7 +483,7 @@ export async function buildAndWriteAgenticBrief({
       }
     }
   }
-  const symbols = collectSymbols({ watch, options: optionPack, recs: recPack, holdings: book });
+  const symbols = collectSymbols({ watch, recs: recPack, holdings: book });
   const meiBySymbol = {};
   const qiBySymbol = {};
   const chart = currentQimenChart(Number(now));
@@ -546,7 +494,6 @@ export async function buildAndWriteAgenticBrief({
   const pack = composeAgenticBrief({
     date: day,
     watch,
-    options: optionPack,
     recs: recPack,
     holdings: book,
     meiBySymbol,

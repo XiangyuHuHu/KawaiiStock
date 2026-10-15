@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { adjustCyclicalValuation, anomalyFromMargin, fundamentalsStale } from '../src/valuation-guards.js';
 import { briefUpstreamStatus, composeAgenticBrief } from '../src/agentic-brief.js';
-import { rankOptionPool } from '../src/options/engine.js';
 import { classifyBars, gateCrossbackBreak, primaryBlockReason } from '../src/strategy/cycle.js';
 import { confirmCycle } from '../src/strategy/confirmation.js';
 import { clearMarketCache, loadVix, vixValue } from '../src/options/market.js';
@@ -68,16 +67,14 @@ test('agentic votes cover the full list scan and flag a newer upstream file', ()
       boards: {},
       featured: { up: [], down: [] }
     },
-    options: { ok: true, date: '2026-10-13', generatedAt: '2026-10-13T14:00:00Z', scanned: 0, ideas: [], buys: [] },
     recs: { date: '2026-10-13', generatedAt: '2026-10-13T14:00:00Z', accounts: [{ id: 'agentic', priorities: [], recommendations: [], opportunities: [] }] },
     holdings: { asOf: '2026-10-13', positions: [] }
   });
   assert.deepEqual(brief.votes.map((row) => row.symbol).sort(), ['AAA', 'BBB', 'CCC']);
   assert.equal(brief.sources.watch.voteScope, 'full-scan');
-  assert.equal(brief.sources.options.emptyScan, true);
+  assert.equal(brief.sources.options, undefined);
   const status = briefUpstreamStatus(brief, {
-    watch: { generatedAt: '2026-10-13T19:00:00Z', scanned: 90 },
-    options: { generatedAt: '2026-10-13T14:00:00Z', scanned: 0 }
+    watch: { generatedAt: '2026-10-13T19:00:00Z', scanned: 90 }
   });
   assert.equal(status.upstreamStale, true);
   assert.match(status.upstreamNotes.join(' '), /每日观察/);
@@ -93,22 +90,6 @@ test('a blocked buy names one reason instead of a score-only gate', () => {
     confirmation: { confirmed: false, reasons: ['没有新突破 / 回踩收复确认', '分数 88 低于 80'] }
   });
   assert.equal(reason, '没有新突破 / 回踩收复确认');
-});
-
-test('option pool ranks holdings and option flow ahead of list order', () => {
-  const rows = [
-    { symbol: 'AAA', from: 'watchlist-fallback' },
-    { symbol: 'BBB', from: 'watchlist-fallback' },
-    { symbol: 'NVDA', from: 'watchlist-fallback' },
-    { symbol: 'TSLA', from: 'holdings' }
-  ];
-  const ranked = rankOptionPool(rows, {
-    BBB: { optionVolume: 10, openInterest: 10 },
-    NVDA: { optionVolume: 5000, openInterest: 8000 }
-  });
-  assert.equal(ranked[0].symbol, 'TSLA');
-  assert.equal(ranked[1].symbol, 'NVDA');
-  assert.notEqual(ranked[2].symbol, 'AAA');
 });
 
 test('price above EMA50 is not a wedge drop, and a broken crossback waits', () => {

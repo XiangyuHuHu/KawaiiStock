@@ -13,8 +13,7 @@ const pack = await buildAndWriteAgenticBrief({
   date: arg('--date') || extra.date,
   holdings: extra.positions ? extra : extra.holdings,
   recs: extra.recs,
-  watchlist: extra.watchlist,
-  options: extra.options
+  watchlist: extra.watchlist
 });
 console.log(JSON.stringify({
   ok: pack.ok,

@@ -106,7 +106,7 @@ function renderPaper(data) {
         return `<tr><td class="sym-cell">${row.symbol}${contract}</td><td>${row.instrument || 'equity'}</td><td class="num">${row.qty}</td><td class="num">${show(row.avgCost)}</td><td class="num">${show(row.last)}<small>${priceLabel}</small></td><td class="num">${row.stopPrice ?? '—'}</td><td>${exit?.label || '—'}</td><td>${strategyLine(row, paperScore.value)}</td></tr>`;
       }).join('')
     }</tbody></table>`
-    : `<p class="empty">纸上空仓。起始 ${show(seed)}。0A–0C 按股票推荐。0D 偏涨试买，当日判断为跌就卖。0E 单腿按 1 张买，跌 20% 平仓；离开推荐并且涨了 40% 才止盈。0F 全 list 动量排名买前几名，3×ATR 吊灯止损。0G 小孟A股、0H 小孟美股做涨停或大涨后的回调，3–4 只分仓。</p>`;
+    : `<p class="empty">纸上空仓。起始 ${show(seed)}。0A–0C 按股票推荐。0D 偏涨试买，当日判断为跌就卖。0E 不再按期权扫描开新仓；已有合约跌 20% 平仓，离开研究名单并且涨了 40% 才止盈。0F 全 list 动量排名买前几名，3×ATR 吊灯止损。0G 小孟A股、0H 小孟美股做涨停或大涨后的回调，3–4 只分仓。</p>`;
 
   const fills = [...(ledger.fills || [])].reverse().slice(0, 20);
   document.getElementById('paperFills').innerHTML = fills.length
@@ -120,7 +120,7 @@ function renderPaper(data) {
   const sourceLine = state.desk === '0d' && sources
     ? `来源：奇门 ${sources.oracleDate || '无'}、观察确认 ${sources.watchDate || '缺失'}、买入推荐 ${sources.recDate || '缺失'}。`
     : state.desk === '0e' && sources
-      ? `来源：期权扫描 ${sources.optionsDate || '缺失'}${sources.optionsStale ? '（已过期）' : ''}。`
+      ? '来源：期权研究台已关闭，本轮只检查已有合约。'
       : state.desk === '0f' && sources
         ? `动量扫描 ${sources.scanned ?? 0} 只，合格 ${sources.eligible ?? 0} 只，大盘 ${sources.regime === 'risk-on' ? '在 200 日线上' : '在 200 日线下，不开新仓'}。前五：${(sources.top || []).slice(0, 5).map((row) => `#${row.rank} ${row.symbol}`).join('、') || '无'}。`
         : (state.desk === '0g' || state.desk === '0h') && sources
@@ -223,7 +223,7 @@ export function bindPaperUi() {
     if (button.disabled) return;
     button.disabled = true;
     if (summary) { summary.hidden = false; summary.textContent = '纸上任务正在运行。'; }
-    setStatus('正在自动过闸：0A、0B、0C，然后 0D 算卦、0E 期权、0F 动量、0G 小孟A股、0H 小孟美股。');
+    setStatus('正在自动过闸：0A、0B、0C，然后 0D 算卦、0E 已有期权、0F 动量、0G 小孟A股、0H 小孟美股。');
     fetch('/api/paper/auto', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

@@ -5,13 +5,12 @@ import { accountById, loadAccounts, loadHoldings } from '../holdings.js';
 import { loadQuotes } from '../quotes.js';
 import { paperDeskOf } from '../risk/limits.js';
 import { canOpen } from '../risk/mode.js';
-import { getPaperView, loadPaperLedger, markPaperOptions, placePaperOrder, quoteHeldOption, recordPaperSession, sweepPaperStops, trailPaperStop } from './desk.js';
+import { getPaperView, loadPaperLedger, placePaperOrder, quoteHeldOption, recordPaperSession, sweepPaperStops, trailPaperStop } from './desk.js';
 import { paperEquityNeedsReference, regularPaperSession } from './execution.js';
-import { hexagramLongs, oracleExit, optionPaperExit, qimenLongs, optionLongs, optionPaperLongs, sameOptionContract, sizeOptionContracts } from './signals.js';
+import { hexagramLongs, oracleExit, optionPaperExit, qimenLongs, sameOptionContract } from './signals.js';
 import { appendAudit } from '../risk/audit.js';
 import { buildCurrentQimen } from '../oracle/qimen-current.js';
 import { buildSymbolOracle } from '../oracle/symbols.js';
-import { loadOptionsFile } from '../options/engine.js';
 import { loadUniverse } from '../universe.js';
 import { loadManyHistoricals } from '../historicals.js';
 import { upcomingEarnings } from '../events.js';
@@ -52,7 +51,7 @@ const SESSION_NOTE = {
   tactical: '0B 进攻：止损及时，止盈分批。没卖点就拿着。不是实盘。',
   agentic: '0C Agentic Alpha：等赔率，没有 A 级就空仓。止损看失效，止盈让赢家跑。不是实盘。',
   oracle: '0D 算卦对照：$100k 纸上。偏涨试买。当日判断为跌并且有持仓就卖。不是预测，不是实盘。',
-  options: '0E 期权对照：$100k 纸上。单腿按 1 张买。跌 20% 平仓。还在推荐里就拿着，离开推荐并且涨了 40% 才止盈。不是实盘。',
+  options: '0E 期权账本：$100k 纸上。研究台已关闭，不按扫描开新仓。已有合约跌 20% 平仓，离开研究名单且涨了 40% 才止盈，临近到期平仓。不是实盘。',
   momentum: '0F Claude 动量：$100k 纸上。全 list 按 6 个月涨幅÷波动排名，SPY/QQQ 在 200 日线上才开新仓。每仓风险 1%，3×ATR 吊灯止损只上移；跌破 100 日线或掉出前 20 名就卖。不是实盘。',
   'xiaomeng-cn': '0G 小孟A股：¥10 万，3–4 只。涨停回调后放量站上 5 日线才买，跌破 10 日线或亏 6% 就清。不是实盘。',
   'xiaomeng-us': '0H 小孟美股：$10 万，规则同小孟A股。大涨板按当天上涨至少 8% 且收在高点附近。不是实盘。'
@@ -573,17 +572,6 @@ async function ensureDayWatch(day) {
   return built?.date === day ? built : null;
 }
 
-async function ensureDayOptions(day) {
-  const existing = await loadOptionsFile(day, 'cov');
-  const hasLegs = (existing?.ideas || []).some((row) => row.contract?.legs?.length);
-  if (existing?.date === day && !existing.stale && hasLegs) return { pack: existing, scanned: false };
-  const { buildOptionsDesk, writeOptions } = await import('../options/engine.js');
-  const built = await buildOptionsDesk({ date: day, strategyId: 'cov' });
-  await writeOptions(built);
-  const pack = await loadOptionsFile(day, 'cov');
-  return { pack, scanned: true };
-}
-
 export async function loadOracleSupport(day) {
   const confirmed = new Set();
   const buys = new Set();
@@ -766,7 +754,7 @@ export async function runOracleSession({ date, force = false } = {}) {
   return finish(id, session, await loadPaperLedger(id));
 }
 
-/** 0E：校验通过的单腿按报价买。没有通过校验时，页面上的单腿参考合约按 1 张小仓买。 */
+/** 0E：期权研究台已关闭。不新开仓。已有合约仍按权利金止损、离开研究名单后的止盈、以及到期前平仓。 */
 export async function runOptionSession({ date, force = false } = {}) {
   const config = await readAutoConfig();
   const id = '0e';
@@ -774,6 +762,7 @@ export async function runOptionSession({ date, force = false } = {}) {
   const day = date || todayStamp();
   const view = await getPaperView(id);
   const session = blankSession(id, policy, day, view.mode);
+  session.note = '期权研究台已关闭。0E 不新开仓；已有合约仍按止损、止盈和到期处理。不是实盘。';
   if (day !== todayStamp()) {
     session.ok = false;
     session.note = '纸上当前报价撮合不能用于历史日期';
@@ -783,36 +772,15 @@ export async function runOptionSession({ date, force = false } = {}) {
     session.skipped.push({ reason: 'disabled', message: 'desk-config.paper.autoAtOpen=false' });
     return finish(id, session, await loadPaperLedger(id));
   }
-  let pack = null;
-  let optionsAutoScan = false;
-  try {
-    const loaded = await ensureDayOptions(day);
-    pack = loaded.pack;
-    optionsAutoScan = loaded.scanned;
-  } catch (error) {
-    session.skipped.push({ reason: 'options-unavailable', message: error.message });
-    return finish(id, session, await loadPaperLedger(id));
-  }
-  session.sources = { optionsDate: pack?.date || null, optionsStale: Boolean(pack?.stale), optionsAutoScan };
-  if (!pack || pack.date !== day || pack.stale) {
-    session.skipped.push({ reason: 'no-current-options', message: `${day} 期权扫描没有写出当日结果，纸上不成交。` });
-    return finish(id, session, await loadPaperLedger(id));
-  }
-  const ideas = pack.ideas || [];
-  const verified = optionLongs(ideas);
-  const longs = verified.length ? verified : optionPaperLongs(ideas);
-  const referenceBook = verified.length === 0 && longs.length > 0;
-  const allLegs = ideas.flatMap((row) => (row.contract?.legs || []).map((item) => ({ ...item, symbol: row.symbol, optionType: item.type })));
-  await markPaperOptions(id, allLegs);
+  session.sources = { optionsResearch: false };
   const ledger = await loadPaperLedger(id);
   const gainPct = policy.takeProfitPct ?? 0.4;
   const lossPct = policy.stopLossPct ?? 0.2;
   for (const pos of ledger.positions || []) {
-    const still = longs.find((row) => sameOptionContract(pos, row));
-    const leg = ideas.flatMap((row) => (row.contract?.legs || []).map((item) => ({ ...item, symbol: row.symbol }))).find((item) => sameOptionContract(pos, item));
+    if (String(pos.instrument || 'option') === 'equity') continue;
     const live = await quoteHeldOption(pos);
-    const bid = Number(live?.bid) > 0 ? Number(live.bid) : (Number(still?.bid) > 0 ? Number(still.bid) : Number(leg?.bid));
-    const ask = Number(live?.ask) > 0 ? Number(live.ask) : (Number(still?.ask) > 0 ? Number(still.ask) : Number(leg?.ask));
+    const bid = Number(live?.bid);
+    const ask = Number(live?.ask);
     const openedOn = (ledger.fills || [])
       .filter((row) => row.side === 'buy' && row.date && sameOptionContract(row, pos))
       .map((row) => row.date)
@@ -822,34 +790,37 @@ export async function runOptionSession({ date, force = false } = {}) {
       avgCost: pos.avgCost,
       bid,
       ask,
-      listed: Boolean(still),
+      listed: false,
       openedBeforeToday: Boolean(openedOn) && openedOn < day,
       gainPct,
       lossPct
     });
     const tag = pos.optionType || pos.right;
     if (!exitKind) {
-      const label = still
-        ? '还在推荐列表里，继续拿'
-        : (Number(bid) > 0 ? '已不在推荐列表，涨幅未到 40%，继续拿' : '没有这张合约的 Bid，不能确认涨跌，继续拿');
-      session.reviews.push({ symbol: pos.symbol, expiration: pos.expiration, strike: pos.strike, optionType: tag, action: 'HOLD', reason: 'hold', label });
+      session.reviews.push({
+        symbol: pos.symbol, expiration: pos.expiration, strike: pos.strike, optionType: tag,
+        action: 'HOLD', reason: 'hold',
+        label: Number(bid) > 0 ? '研究台已关闭，涨幅未到止盈且未跌破止损，继续拿' : '没有这张合约的 Bid，不能确认涨跌，继续拿'
+      });
       continue;
     }
     if (!(bid > 0) || !(ask > 0)) {
-      session.reviews.push({ symbol: pos.symbol, expiration: pos.expiration, strike: pos.strike, optionType: tag, action: 'REVIEW', reason: 'contract-quote-required', label: '有卖点但没有这张合约的 Bid' });
+      session.reviews.push({
+        symbol: pos.symbol, expiration: pos.expiration, strike: pos.strike, optionType: tag,
+        action: 'REVIEW', reason: 'contract-quote-required', label: '有卖点但没有这张合约的 Bid'
+      });
       session.skipped.push({ symbol: pos.symbol, side: 'sell', reason: 'contract-quote-required', message: '这张合约没有可验证的 Bid/Ask，不能用正股价格代替期权平仓价' });
       continue;
     }
-    const reason = exitKind;
-    const exitText = { stop: '权利金跌了 20%，平仓', tp: '已不在推荐列表，并且涨了 40%，卖出', expiry: '离到期不到 1 天，平仓，不拿到期' };
+    const exitText = { stop: '权利金跌了 20%，平仓', tp: '研究台已关闭，并且涨了 40%，卖出', expiry: '离到期不到 1 天，平仓，不拿到期' };
     session.reviews.push({
       symbol: pos.symbol, expiration: pos.expiration, strike: pos.strike, optionType: tag,
-      action: 'SELL', reason, label: exitText[exitKind]
+      action: 'SELL', reason: exitKind, label: exitText[exitKind]
     });
-    const legAt = Number(live?.quoteAt) > 0 ? Number(live.quoteAt) : (Number(still?.quoteAt || leg?.quoteAt) || null);
+    const legAt = Number(live?.quoteAt) > 0 ? Number(live.quoteAt) : null;
     const out = await execute({
       desk: id,
-      id: `paper-auto:${day}:${id}:${pos.symbol}:${pos.expiration}:${pos.strike}:${reason}`,
+      id: `paper-auto:${day}:${id}:${pos.symbol}:${pos.expiration}:${pos.strike}:${exitKind}`,
       symbol: pos.symbol,
       side: 'sell',
       qty: pos.qty,
@@ -860,7 +831,7 @@ export async function runOptionSession({ date, force = false } = {}) {
       bid,
       ask,
       quoteAt: legAt,
-      quoteMode: live?.quoteMode || still?.quoteMode || leg?.quoteMode,
+      quoteMode: live?.quoteMode || null,
       paperReference: paperEquityNeedsReference({ quoteAt: legAt, last: bid }),
       limitPrice: bid * 0.998,
       stopPrice: pos.stopPrice,
@@ -872,69 +843,7 @@ export async function runOptionSession({ date, force = false } = {}) {
     });
     (out.ok ? session.fills : session.skipped).push(out);
   }
-  if (!longs.length) {
-    const watched = ideas.filter((row) => row.contract?.legs?.length).length;
-    session.skipped.push({
-      reason: 'no-option-buy',
-      message: watched
-        ? `期权扫描没有单腿双边报价，纸上没有可买的小仓。`
-        : '期权推荐没有可成交的单腿买入。'
-    });
-    return finish(id, session, await loadPaperLedger(id));
-  }
-  if (!canOpen(view.mode)) {
-    session.skipped.push({ reason: view.mode, message: `${view.mode} 禁止新开仓。` });
-    return finish(id, session, await loadPaperLedger(id));
-  }
-  const fresh = await loadPaperLedger(id);
-  const held = fresh.positions || [];
-  let opened = todayAutoBuys(fresh, day);
-  let cash = Number(fresh.cash) || 0;
-  const nav = Number(fresh.nav) || cash;
-  const openCap = referenceBook ? policy.maxPositions : policy.maxNewOpens;
-  for (const row of longs) {
-    if (opened >= openCap || held.length >= policy.maxPositions) break;
-    if (held.some((pos) => sameOptionContract(pos, row))) continue;
-    const reference = referenceBook || !(row.quoteAt > 0);
-    const sized = reference ? { qty: 1, maxLoss: Number((row.ask * 100).toFixed(2)) } : sizeOptionContracts(row.ask, nav, cash, policy);
-    if (!sized) {
-      session.skipped.push({ symbol: row.symbol, reason: 'size', message: '权利金超过单笔 3% 或现金底线' });
-      continue;
-    }
-    if (reference && cash < row.ask * 100) {
-      session.skipped.push({ symbol: row.symbol, reason: 'size', message: '现金不够买 1 张' });
-      continue;
-    }
-    const out = await execute({
-      desk: id,
-      id: `paper-auto:${day}:${id}:${row.symbol}:${row.expiration}:${row.strike}:${row.optionType}:buy`,
-      symbol: row.symbol,
-      side: 'buy',
-      qty: sized.qty,
-      instrument: 'option',
-      optionType: row.optionType,
-      expiration: row.expiration,
-      strike: row.strike,
-      dte: row.dte,
-      bid: row.bid,
-      ask: row.ask,
-      quoteAt: row.quoteAt,
-      quoteMode: row.quoteMode,
-      paperReference: reference,
-      limitPrice: row.ask * 1.002,
-      stopPrice: Number((row.ask * (1 - lossPct)).toFixed(2)),
-      maxLoss: sized.maxLoss,
-      structure: 'long',
-      type: 'limit',
-      note: reference ? `paper-auto-option-reference:${row.optionType}` : `paper-auto-option:${row.optionType}`
-    });
-    (out.ok ? session.fills : session.skipped).push(out);
-    if (out.ok && !out.replay) {
-      cash -= out.price * 100 * out.qty;
-      opened += 1;
-      held.push(row);
-    }
-  }
+  session.skipped.push({ reason: 'options-research-off', message: '期权研究台已关闭，不再根据扫描开新仓。' });
   return finish(id, session, await loadPaperLedger(id));
 }
 
@@ -1284,7 +1193,7 @@ export async function runPaperOpen({ date, recs, force = false, desk } = {}) {
     date: date || todayStamp(),
     sessions,
     stops,
-    note: '0A 财富 + 0B 进攻 + 0C Agentic，然后 0D 算卦、0E 期权、0F Claude 动量、0G 小孟A股、0H 小孟美股。后面几本不占用前三本标的。不是实盘。'
+    note: '0A 财富 + 0B 进攻 + 0C Agentic，然后 0D 算卦、0E 只处理已有期权、0F Claude 动量、0G 小孟A股、0H 小孟美股。后面几本不占用前三本标的。不是实盘。'
   };
 }
 

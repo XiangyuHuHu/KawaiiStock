@@ -309,8 +309,8 @@ export function holdingsAge(book, now = new Date()) {
   return { ageDays, asOf: day, label: `快照已过 ${ageDays} 天（${day}），不是今日实时` };
 }
 
-function annotateHoldings(account, data) {
-  const age = holdingsAge(data);
+function annotateHoldings(account, data, now = new Date()) {
+  const age = holdingsAge(data, now);
   const ageStale = age.ageDays == null || age.ageDays > 0;
   const broker = account.source === 'robinhood' ? holdingsFreshness(data) : null;
   const stale = broker ? (broker.fresh ? false : (broker.stale || ageStale)) : (Boolean(data.stale) || ageStale);
@@ -559,7 +559,7 @@ export async function importHoldings(account, raw, now = new Date()) {
     optionPositions: parsed.optionPositions,
     openOrders: []
   });
-  return annotateHoldings(account, saved);
+  return annotateHoldings(account, saved, now);
 }
 
 export async function applyScan(account, scan) {

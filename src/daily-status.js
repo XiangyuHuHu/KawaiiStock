@@ -2,7 +2,7 @@
 // A fresh report can still contain stale inputs or failed downstream steps.
 // 必选：叙事日报、模拟结算、Grok 推荐、核验文件。其余辅助步骤失败只记 warnings，不让每日任务失败。
 const REQUIRED = { narrative: '叙事日报', sim: '模拟结算' };
-const OPTIONAL = { tradable: '今日买卖', posters: '价位图', options: '期权扫描', oracle: '算卦', watchlist: '美股观察', watchlistCn: 'A股观察', brief: 'Agentic意见', risk: '风控读取', events: '事件日历', guards: '止损检查', paper: '纸上实验' };
+const OPTIONAL = { tradable: '今日买卖', posters: '价位图', oracle: '算卦', watchlist: '美股观察', watchlistCn: 'A股观察', brief: 'Agentic意见', risk: '风控读取', events: '事件日历', guards: '止损检查', paper: '纸上实验' };
 
 export function summarizeDailyJob(payload) {
   const errors = [], warnings = [];
