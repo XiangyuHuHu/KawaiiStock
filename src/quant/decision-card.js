@@ -130,6 +130,8 @@ export function buildDecisionCard(input = {}) {
   if (trailing?.kTightened != null) reasons.push(`衰竭或结构破坏，k 收到 ${trailing.kTightened}。`);
   reasons.push(...(held ? ['持仓动作沿用主账户追踪，不另起一套卖出规则。'] : reentry.reasons));
   reasons.push(reentryTriggerText({ ema20: features.ema20, ema50: features.ema50, baseHigh }));
+  const martin = martinSideNote(input.martin);
+  if (martin) reasons.push(martin.note);
 
   return {
     ...FLAGS,
@@ -171,7 +173,24 @@ export function buildDecisionCard(input = {}) {
     },
     reasons,
     missing: trailing?.missing || [],
-    detail: trailing?.detail || reentry.reasons[0] || ''
+    detail: trailing?.detail || reentry.reasons[0] || '',
+    ...(martin ? { martin } : {})
+  };
+}
+
+/** Martin 日报只作并列参考。不改 suggestedAction，也不产生股数。 */
+function martinSideNote(martin) {
+  if (!martin || typeof martin !== 'object') return null;
+  return {
+    referenceOnly: true,
+    replacesGates: false,
+    liveTrading: false,
+    placesOrders: false,
+    action: martin.action || null,
+    stage: martin.stage || null,
+    scan: martin.scan ?? null,
+    planned_stop: martin.planned_stop ?? null,
+    note: 'Martin 建议只并列展示，不改这张卡的动作，也不下单。'
   };
 }
 
