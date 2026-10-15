@@ -47,6 +47,12 @@
 
 规则摘要见 [main-account-trailing-v1.md](main-account-trailing-v1.md)。决策卡和 7811 纸上账见 [quant-v1.md](quant-v1.md)。输入里没有 `quantPaper` 时，心跳不附带纸上账，沉默条件也不变。纸上账不下券商单。
 
+### Martin 正股建议（Kawaii小胡写，Kawaii美股读）
+
+`node scripts/martin-advice.js`，或 `GET /api/martin/advice`。每天一份 `reports/YYYY-MM-DD-martin-luk-advice.json`（旁边有同名 `.md`）。OwnerBot 仍是 Kawaii小胡。Kawaii美股只把这份当参考，过自己账户上已有的闸。它不下单，不代挂止损，也不把 7811 从观察/纸上改成实盘。`liveTrading` 保持 false。
+
+建议新开的清单文句是「成交后立刻挂 GTC stop」，`stopMustPlaceAfterFill` 为 true，`brokerOrderId` 为 null。期权数字不在这份报告里。规则见 [martin-luk-advice-v1.md](martin-luk-advice-v1.md)。
+
 ### 7983 预筛模块（不进每日表面）
 
 `src/bot/options-prefilter.js` 仍保留原来的默认值：DTE 2–14、`|delta|` 0.15–0.55、权利金不超过每股 $5。0DTE / 1DTE 不进候选。7811 追踪没有改这个模块，成交归集里 3469→tactical、7983→agentic 也没改。

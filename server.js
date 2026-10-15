@@ -131,6 +131,26 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, await seedQuantPaperFile());
       return;
     }
+    if (req.method === 'GET' && url.pathname === '/api/martin/advice') {
+      const { adviceFromMarket } = await import('./src/martin/report.js');
+      const symbols = (url.searchParams.get('symbols') || '').split(',').map((symbol) => symbol.trim()).filter(Boolean);
+      sendJson(res, 200, await adviceFromMarket({
+        symbols,
+        asOf: url.searchParams.get('date') || undefined,
+        write: url.searchParams.get('write') !== '0'
+      }));
+      return;
+    }
+    if (req.method === 'POST' && url.pathname === '/api/martin/advice') {
+      const { buildAndWriteMartinAdvice } = await import('./src/martin/report.js');
+      const body = await readJsonBody(req);
+      sendJson(res, 200, await buildAndWriteMartinAdvice({
+        ...body,
+        reportsDir: undefined,
+        write: body.write !== false && url.searchParams.get('write') !== '0'
+      }));
+      return;
+    }
     if (req.method === 'POST' && url.pathname === '/api/quant/paper/tick') {
       const { tickQuantPaperFile } = await import('./src/quant/service.js');
       let body = {};

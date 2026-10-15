@@ -13,7 +13,8 @@
     "daily": "node scripts/daily.js",
     "order": "node scripts/order.js",
     "paper": "node scripts/paper.js",
-    "bot:heartbeat": "node scripts/bot-heartbeat.js"
+    "bot:heartbeat": "node scripts/bot-heartbeat.js",
+    "martin:advice": "node scripts/martin-advice.js"
   },
   "dependencies": {
     "qimen-dunjia": "3.1.0"

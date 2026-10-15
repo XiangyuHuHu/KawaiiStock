@@ -101,3 +101,5 @@ k 只在两件事上收一档：阶段是衰竭，或 `structureBreak`。收到�
 ## 8. 还没做
 
 参数都标了 `research-defaults` 和 `pendingBacktest`。没有样本外结果之前，不能把某一档 k、某一段回吐或某一次纸上盈亏说成策略有效。
+
+Martin Luk 启发的正股扫描和入场建议不在这张卡的动作里。调用方如果另外传入 `martin`，决策卡只多一块并列参考，`suggestedAction` 和 `orderQty` 仍按上面的规则。日报、扫描和成交后止损清单见 [martin-luk-advice-v1.md](martin-luk-advice-v1.md)。
