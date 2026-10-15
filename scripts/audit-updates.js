@@ -4,14 +4,14 @@ import { join } from 'node:path';
 import { REPORTS_DIR,ROOT } from '../src/paths.js';
 const base=process.env.AUDIT_BASE_URL || 'http://127.0.0.1:3479';
 const paths=[
-  '/api/health','/api/accounts?desk=chatgpt','/api/accounts?desk=grok','/api/compare',
+  '/api/health','/api/accounts?desk=chatgpt','/api/accounts?desk=grok','/api/quant/paper',
   ...['grok','chatgpt'].flatMap(desk=>['main','tactical','agentic'].map(account=>`/api/desk?desk=${desk}&account=${account}`)),
   '/api/tape?desk=chatgpt&account=tactical','/api/stocks?pageSize=1','/api/stocks?market=cn&pageSize=1','/api/universe',
   '/api/reports','/api/recommendations?advisor=chatgpt','/api/recommendations?advisor=grok',
   '/api/actuals?advisor=chatgpt','/api/actuals?advisor=grok',
   '/api/oracle/current?scope=all','/api/oracle/symbols?market=us','/api/oracle/symbols?market=cn',
   '/api/oracle/accuracy?market=us','/api/oracle/accuracy?market=cn','/api/oracle',
-  '/api/agentic-brief','/api/guards','/api/events','/api/review?advisor=chatgpt','/api/review?advisor=grok',
+  '/api/agentic-brief','/api/guards','/api/events',
   '/api/watchlist','/api/watchlist/cn','/api/watch-score','/api/cycle?symbol=SPY',
   '/api/risk','/api/paper?all=1','/api/sim','/api/strategy/validation',
   '/api/accounts/main/holdings?desk=chatgpt','/api/accounts/agentic/holdings?desk=grok',

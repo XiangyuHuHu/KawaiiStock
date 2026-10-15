@@ -1486,3 +1486,10 @@ body:has(#panel-oracle:not([hidden])) .masthead { padding-top: 14px; padding-bot
 [data-wheel-root] small { display: block; margin-top: 4px; color: var(--muted); }
 [data-wheel-root] input { width: 96px; padding: 6px 8px; border: 1px solid var(--brass-dim); background: var(--paper); color: var(--ink); }
 .wheel-call { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.quant-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; margin-top: 12px; }
+.quant-card { border: 1px solid var(--line); background: var(--white); padding: 14px 16px; }
+.quant-card h3, .quant-action { margin: 0 0 8px; font-family: var(--mono); letter-spacing: 0.08em; }
+.quant-card p { margin: 0 0 8px; }
+.quant-card ul { margin: 0; padding-left: 18px; }
+.quant-symbols { min-width: 280px; padding: 6px 8px; border: 1px solid var(--brass-dim); background: var(--paper); color: var(--ink); font-family: var(--mono); }
+#quantPaperSummary { margin: 8px 0 12px; }

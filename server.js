@@ -6,7 +6,6 @@ import { buildDesk, buildTape, buildUniversePage } from './src/desk.js';
 import { accountById, applyScan, canImportHoldings, importHoldings, loadAccounts, loadConfig, loadHoldings, loadStrategy, saveHoldings } from './src/holdings.js';
 import { loadDailyReports, loadRecFiles } from './src/reports.js';
 import { buildRecommendations } from './src/recommend.js';
-import { buildCompare } from './src/compare.js';
 import { appendActual, importBrokerFills, loadActualDay, loadActualFiles, recordAgenticFill, recordDailyActuals, removeActual } from './src/actuals.js';
 import { writeAgenticNarrative } from './src/narrative.js';
 import { getSimState, resetSim, runSimSettlement } from './src/sim.js';
@@ -111,8 +110,35 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, await loadAccounts(url.searchParams.get('desk') || 'grok'));
       return;
     }
-    if (req.method === 'GET' && url.pathname === '/api/compare') {
-      sendJson(res, 200, await buildCompare());
+    if (req.method === 'GET' && url.pathname === '/api/quant/decision') {
+      const { cardsFromMarket } = await import('./src/quant/service.js');
+      const raw = url.searchParams.get('symbols') || url.searchParams.get('symbol') || '';
+      sendJson(res, 200, await cardsFromMarket(raw.split(',')));
+      return;
+    }
+    if (req.method === 'POST' && url.pathname === '/api/quant/decision') {
+      const { buildDecisionCards } = await import('./src/quant/decision-card.js');
+      sendJson(res, 200, buildDecisionCards(await readJsonBody(req)));
+      return;
+    }
+    if (req.method === 'GET' && url.pathname === '/api/quant/paper') {
+      const { readQuantPaper } = await import('./src/quant/service.js');
+      sendJson(res, 200, await readQuantPaper());
+      return;
+    }
+    if (req.method === 'POST' && url.pathname === '/api/quant/paper/seed') {
+      const { seedQuantPaperFile } = await import('./src/quant/service.js');
+      sendJson(res, 200, await seedQuantPaperFile());
+      return;
+    }
+    if (req.method === 'POST' && url.pathname === '/api/quant/paper/tick') {
+      const { tickQuantPaperFile } = await import('./src/quant/service.js');
+      let body = {};
+      try { body = await readJsonBody(req); } catch { body = {}; }
+      sendJson(res, 200, await tickQuantPaperFile({
+        ...body,
+        loadMarket: body.loadMarket === true || url.searchParams.get('market') === '1'
+      }));
       return;
     }
     if (req.method === 'GET' && url.pathname === '/api/desk') {
@@ -419,14 +445,6 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/guards') {
       const { buildGuardsDesk } = await import('./src/guards.js');
       sendJson(res, 200, await buildGuardsDesk());
-      return;
-    }
-    if (req.method === 'GET' && url.pathname === '/api/review') {
-      const { buildReviewDesk } = await import('./src/review.js');
-      sendJson(res, 200, await buildReviewDesk({
-        advisor: url.searchParams.get('advisor') || url.searchParams.get('desk') || 'grok',
-        limit: url.searchParams.get('limit') || 16
-      }));
       return;
     }
     if (req.method === 'GET' && url.pathname === '/api/events') {
