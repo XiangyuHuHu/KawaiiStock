@@ -1,0 +1,127 @@
+{
+  "account": "main-7811",
+  "accountMask": "\u2022\u2022\u2022\u20227811",
+  "asOf": "2026-10-15T22:46:00-07:00",
+  "source": "user screenshot Positions tab Self-Directed (...7811)",
+  "ownerBot": "Kawaii\u5c0f\u80e1",
+  "operableByKawaiiMeigu": false,
+  "cashEquivalents": [
+    {
+      "symbol": "JPMPD",
+      "qty": 50098.32,
+      "avgCost": 1.0,
+      "costTotal": 50098.32,
+      "assetClass": "premium_deposit",
+      "treatAsCash": true,
+      "apy": 0.032
+    }
+  ],
+  "cashUsd": 50098.32,
+  "equityCostBasisUsd": 655193.39,
+  "positions": [
+    {
+      "symbol": "MU",
+      "qty": 105,
+      "avgCost": 728.202,
+      "costTotal": 76461.21,
+      "theme": "ai-memory"
+    },
+    {
+      "symbol": "MRVL",
+      "qty": 350,
+      "avgCost": 223.3552,
+      "costTotal": 78174.31,
+      "theme": "ai-semiconductor"
+    },
+    {
+      "symbol": "PANW",
+      "qty": 200,
+      "avgCost": 267.4839,
+      "costTotal": 53496.78,
+      "theme": "cyber"
+    },
+    {
+      "symbol": "BE",
+      "qty": 290,
+      "avgCost": 221.5434,
+      "costTotal": 64247.58,
+      "theme": "ai-power"
+    },
+    {
+      "symbol": "NBIS",
+      "qty": 320,
+      "avgCost": 202.7809,
+      "costTotal": 64889.9,
+      "theme": "ai-infra"
+    },
+    {
+      "symbol": "VST",
+      "qty": 330,
+      "avgCost": 140.3791,
+      "costTotal": 46325.1,
+      "theme": "ai-power"
+    },
+    {
+      "symbol": "INTC",
+      "qty": 500,
+      "avgCost": 115.1758,
+      "costTotal": 57587.91,
+      "theme": "semiconductor"
+    },
+    {
+      "symbol": "ORCL",
+      "qty": 340,
+      "avgCost": 135.8528,
+      "costTotal": 46189.95,
+      "theme": "ai-software"
+    },
+    {
+      "symbol": "RKLB",
+      "qty": 660,
+      "avgCost": 104.0334,
+      "costTotal": 68662.02,
+      "theme": "space-event"
+    },
+    {
+      "symbol": "CRWD",
+      "qty": 150,
+      "avgCost": 193.961,
+      "costTotal": 29094.15,
+      "theme": "cyber"
+    },
+    {
+      "symbol": "IREN",
+      "qty": 1000,
+      "avgCost": 52.6666,
+      "costTotal": 52666.58,
+      "theme": "crypto-ai-power"
+    },
+    {
+      "symbol": "CBRS",
+      "qty": 60,
+      "avgCost": 174.64,
+      "costTotal": 10478.4,
+      "theme": "other"
+    },
+    {
+      "symbol": "CEG",
+      "qty": 15,
+      "avgCost": 317.1467,
+      "costTotal": 4757.2,
+      "theme": "ai-power"
+    },
+    {
+      "symbol": "CRDO",
+      "qty": 10,
+      "avgCost": 216.23,
+      "costTotal": 2162.3,
+      "theme": "ai-connectivity"
+    }
+  ],
+  "notes": [
+    "JPMPD = JPMorgan Premium Deposit, treat as cash, withdrawable to buy stocks",
+    "Costs are broker Cost column; market prices not on screenshot",
+    "CBRS ticker as shown on screenshot (verify vs CFLT if needed)",
+    "Observation/testing only; no auto orders on 7811 from \u7f8e\u80a1 bot"
+  ]
+}

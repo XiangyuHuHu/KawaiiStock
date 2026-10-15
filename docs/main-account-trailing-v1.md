@@ -6,11 +6,17 @@ Status: observation and suggestions only. This is a research draft, not a proven
 
 ## 适用范围 / Scope
 
-规则只写 **7811/主账户权益**。操作者把 Robinhood wealth equity book **••••3469** 当作这份观察的账户尾号，所以 `account` / `accountLast4` 为 `main`、`7811` 或 `3469` 都会跑观察。**7983 期权账户排除**，哪怕同时写了 `main-trailing`。不修改 7983 短周期权预筛，也不改成交归集里 3469→tactical、7983→agentic 的映射。
+`ownerBot` 是 **Kawaii小胡**。这份观察由小胡来跑、来回复。
 
-The rules describe **7811 / main equity**. Robinhood **••••3469** is the operator's wealth-book label and also turns the observer on. **7983 options stay excluded.** The 7983 prefilter and the fill-routing map are unchanged.
+目标账户只有 **Self-Directed ••••7811** 这个大账本。Robinhood **••••3469**（大约 $11k）和 **••••7983** 都不是这套规则的对象。Kawaii美股继续看自己能操作的 3469 / 7983，**不得对 7811 自动下单**。`operableByKawaiiMeigu` 固定是 false。观察器碰到 3469、7983、`tactical` 或 `agentic` 会直接跳过，哪怕带了 `main-trailing`。
 
-今日自营规模大约 **$10,000–$15,000**。下面的百分比、k 和回撤带都是这个规模上的**研究默认 / research defaults**，不是实盘授权。先监控，不自动减仓，不读券商密钥，不发单。
+7983 短周期权预筛不改。成交归集里 3469→tactical、7983→agentic 也不改。
+
+The owner is **Kawaii小胡**. The book is Self-Directed **••••7811** only. Robinhood **••••3469** and **••••7983** stay with Kawaii美股, which must not auto-trade 7811. The 7983 prefilter and the fill-routing map stay as they are.
+
+百分比、k 和回撤带仍是**研究默认 / research defaults**，不是实盘授权。它们描述的是 7811 大账本，不是 3469 的小账户。先监控，不自动减仓，不读券商密钥，不发单。
+
+2026-10-15 的持仓截图没有现价。权益成本合计约 **$655,193**。`JPMPD` 是 Premium Deposit，当成可取现金 **$50,098.32**，不参与股票追踪。没有现价时，主题权重按成本而不是市值，动作是 `NO_TRADE`，不编造价格。
 
 ## R 与分批兑现 / R and scale-out
 
@@ -53,9 +59,20 @@ The published k is the low end of each comparison pair. The stop ratchets up onl
 
 ## 主题集中度 / Theme concentration
 
-持仓带 `marketValue` 时，按 `theme` 加总，权重分母优先用 `nav`。同一驱动因素的参考上限是 **35%–45%**。超过 35% 标 `aboveReference`，超过 45% 再标 `aboveUpperReference`。单票参考上限：成长/周期 **8%–12%**，事件/高波动 **4%–8%**。越线只打标，不因此改动作。
+有市值时按 `marketValue / nav`。没有现价时按 `costTotal`，分母是权益成本，并另给一个含现金的 `weightPctOfCapital`。同一驱动因素的参考上限仍是 **35%–45%**。超过 35% 标 `aboveReference`，超过 45% 再标 `aboveUpperReference`。权重大于 10% 标 `heavy`，只表示这截图上的成本已经不轻。
 
-Theme weights are sums of `marketValue`. Crossing the reference band raises a review flag. It does not change the suggested action.
+家族有重叠，不能相加：
+
+| 家族 | 主题 |
+| --- | --- |
+| `ai-power` | `ai-power`、`crypto-ai-power` |
+| `semi` | `ai-memory`、`ai-semiconductor`、`semiconductor`、`ai-connectivity` |
+| `cyber` | `cyber` |
+| `ai-linked` | 上面半导体和供电，再加上 `ai-infra`、`ai-software` |
+
+2026-10-15 截图按成本粗算：半导体约 32.7%，AI 供电约 25.6%，网络安全约 12.6%，三条叠成的 `ai-linked` 约 75.3%，高于 45% 的参考上限。这是成本结构，不是市值，也不是减仓指令。单票参考上限仍是成长/周期 **8%–12%**，事件/高波动 **4%–8%**。`space-event` 按事件、`crypto-ai-power` 按高波动，只在调用方没写 `volClass` 时这样假定。越线只打标，不改动作。
+
+Theme weights use market value when `nav` is present. Otherwise they use cost. `ai-linked` overlaps the power and semi families, so those percentages are not additive. On the 2026-10-15 cost snapshot the linked AI complex is about 75% and sits above the 45% reference. That is not an order.
 
 计划价差风险（大约单笔 0.5%–0.75%、未保护仓位合计 4%–5%）仍是研究参考。本助手不算可买股数。
 

@@ -1,10 +1,24 @@
 /** 主账户权益观察：只给建议。研究默认，不是实盘授权，也不生成股数。 */
 
+export const OWNER_BOT = 'Kawaii小胡';
+
+export const THEME_FAMILIES = {
+  'ai-power': ['ai-power', 'crypto-ai-power'],
+  semi: ['ai-memory', 'ai-semiconductor', 'semiconductor', 'ai-connectivity'],
+  cyber: ['cyber'],
+  'ai-linked': ['ai-memory', 'ai-semiconductor', 'semiconductor', 'ai-connectivity', 'ai-power', 'crypto-ai-power', 'ai-infra', 'ai-software']
+};
+
+const THEME_VOL_CLASS = {
+  'space-event': 'event',
+  'crypto-ai-power': 'high-vol'
+};
+
 export const MAIN_TRAILING_PARAMS = {
   label: 'research-defaults',
   liveTradingAuthority: false,
-  accountSizeUsd: [10000, 15000],
-  accountSizeNote: 'Research defaults for a ~10k-15k self-directed book. Not live trading authority.',
+  referenceBook: '7811',
+  accountSizeNote: 'Research defaults for the large Self-Directed 7811 book. Not the ~11k 3469 book. Not live trading authority.',
   rDefinition: 'entry - invalidation',
   trim2R: { r: 2, pct: [0.2, 0.25] },
   trim3R: { r: 3, pct: [0.2, 0.3] },
@@ -23,10 +37,11 @@ export const MAIN_TRAILING_PARAMS = {
 
 export const MAIN_TRAILING_SCOPE = {
   equityBook: '7811',
-  equityBookLabel: '主账户权益',
-  wealthEquityBookLast4: '3469',
-  excluded: ['7983'],
-  note: '7811/主账户权益 only. Wealth equity book last4 3469 is an observer label. 7983 options are excluded. Thresholds are research defaults, not live trading authority.'
+  equityBookLabel: 'Self-Directed 主账户权益',
+  ownerBot: OWNER_BOT,
+  operableByKawaiiMeigu: false,
+  excluded: ['3469', '7983'],
+  note: 'Self-Directed 7811 only. ownerBot is Kawaii小胡. 3469 and 7983 stay with Kawaii美股 and are excluded. This observer does not auto-trade 7811. Thresholds are research defaults, not live trading authority.'
 };
 
 const DETAILS = {
@@ -70,24 +85,94 @@ function hasTrailingShape(row) {
   return ['avgCost', 'invalidation', 'atr14', 'peakClose', 'theme'].every((key) => row[key] != null && row[key] !== '');
 }
 
+function isExcludedBook(account, book, routineName) {
+  if (book === '7983' || book === '3469') return true;
+  if (account === '7983' || account === '3469' || account === 'agentic' || account === 'tactical') return true;
+  return routineName.includes('7983');
+}
+
 export function isMainTrailingInput(input = {}, routine = '') {
   const account = String(input.account || input.accountId || '').trim().toLowerCase();
-  const book = last4(input.accountLast4);
+  const book = last4(input.accountLast4 || input.accountMask || '');
   const routineName = String(routine || input.routine || '').trim().toLowerCase();
-  if (account === '7983' || account === 'agentic' || book === '7983' || routineName.includes('7983')) return false;
-  if (account === 'main' || account === '7811' || account === '3469' || account === 'main-equity') return true;
-  if (book === '7811' || book === '3469') return true;
+  if (isExcludedBook(account, book, routineName)) return false;
+  if (account === 'main' || account === '7811' || account === 'main-7811' || account === 'main-equity' || account === 'self-directed') return true;
+  if (book === '7811') return true;
   if (routineName === 'main-trailing' || routineName.startsWith('main-trailing')) return true;
-  const rows = input.positions || input.holdings || [];
+  const rows = [...(input.positions || []), ...(input.holdings || [])];
   return rows.some(hasTrailingShape);
 }
 
 export function volClassOf(row) {
   const raw = String(row.volClass || row.volatilityClass || row.vol || '').trim().toLowerCase();
-  if (/high[-_\s]?vol|elastic/.test(raw)) return 'high-vol';
-  if (raw.includes('event')) return 'event';
-  if (raw.includes('cycle')) return 'cycle';
-  return 'growth';
+  if (raw) {
+    if (/high[-_\s]?vol|elastic/.test(raw)) return 'high-vol';
+    if (raw.includes('event')) return 'event';
+    if (raw.includes('cycle')) return 'cycle';
+    if (raw.includes('growth')) return 'growth';
+  }
+  return THEME_VOL_CLASS[String(row.theme || '').trim().toLowerCase()] || 'growth';
+}
+
+export function isCashRow(row = {}) {
+  const symbol = String(row.symbol || '').trim().toUpperCase();
+  return row.treatAsCash === true || row.assetClass === 'premium_deposit' || symbol === 'JPMPD';
+}
+
+function cashAmount(row) {
+  return num(row.costTotal ?? row.marketValue ?? row.cashUsd ?? row.qty);
+}
+
+export function bookCash(input = {}) {
+  const sources = [];
+  const seen = new Set();
+  let fromRows = 0;
+  for (const row of [...(input.cashEquivalents || []), ...(input.positions || []), ...(input.holdings || [])]) {
+    if (!isCashRow(row)) continue;
+    const symbol = String(row.symbol || '').trim().toUpperCase();
+    if (symbol && seen.has(symbol)) continue;
+    if (symbol) seen.add(symbol);
+    const amount = cashAmount(row);
+    if (amount == null) continue;
+    fromRows += Math.abs(amount);
+    if (symbol) sources.push(symbol);
+  }
+  const explicit = num(input.cashUsd ?? input.cash);
+  const summed = sources.length ? round(fromRows, 2) : null;
+  const cashUsd = explicit != null ? round(explicit, 2) : summed;
+  return {
+    cashUsd,
+    cashWithdrawable: cashUsd != null && cashUsd > 0,
+    cashSymbols: [...new Set(sources)],
+    cashReconciled: explicit == null || summed == null || Math.abs(explicit - summed) < 0.02
+  };
+}
+
+function costAmount(row) {
+  const cost = num(row.costTotal);
+  if (cost != null) return Math.abs(cost);
+  const qty = num(row.qty ?? row.quantity);
+  const entry = entryOf(row);
+  if (qty > 0 && entry > 0) return Math.abs(qty * entry);
+  return null;
+}
+
+export function equityCostBasisOf(input = {}, rows = input.positions || input.holdings || []) {
+  let sum = 0;
+  let any = false;
+  for (const row of rows) {
+    if (isCashRow(row)) continue;
+    const cost = costAmount(row);
+    if (cost == null) continue;
+    sum += cost;
+    any = true;
+  }
+  const summed = any ? round(sum, 2) : null;
+  const explicit = num(input.equityCostBasisUsd);
+  return {
+    equityCostBasisUsd: explicit != null ? round(explicit, 2) : summed,
+    equityCostBasisReconciled: explicit == null || summed == null || Math.abs(explicit - summed) < 0.02
+  };
 }
 
 export function resolveK(row) {
@@ -149,22 +234,33 @@ export function suggestedTrail(row, k) {
   };
 }
 
-function nameWeight(row, nav, volClass) {
+function positionValue(row) {
   const mv = num(row.marketValue);
+  if (mv != null) return { amount: Math.abs(mv), kind: 'market' };
+  const cost = costAmount(row);
+  if (cost != null) return { amount: cost, kind: 'cost' };
+  return null;
+}
+
+function nameWeight(row, context, volClass) {
   const cap = volClass === 'event' || volClass === 'high-vol'
     ? MAIN_TRAILING_PARAMS.nameReferencePct.event
     : MAIN_TRAILING_PARAMS.nameReferencePct.growth;
-  if (mv == null || !(nav > 0)) {
+  const valued = positionValue(row);
+  const denom = valued?.kind === 'market' ? num(context.nav) : num(context.equityCostBasis);
+  if (!valued || !(denom > 0)) {
     return {
       nameWeightPct: null,
+      nameWeightBasis: valued?.kind || null,
       nameWeightReferencePct: cap.slice(),
       nameWeightAboveReference: false,
       nameWeightAboveCap: false
     };
   }
-  const nameWeightPct = round(Math.abs(mv) / nav * 100, 4);
+  const nameWeightPct = round(valued.amount / denom * 100, 4);
   return {
     nameWeightPct,
+    nameWeightBasis: valued.kind,
     nameWeightReferencePct: cap.slice(),
     nameWeightAboveReference: nameWeightPct > cap[0],
     nameWeightAboveCap: nameWeightPct > cap[1]
@@ -227,6 +323,7 @@ function shell(fields) {
     orderQty: null,
     missing: fields.missing || [],
     nameWeightPct: fields.nameWeightPct ?? null,
+    nameWeightBasis: fields.nameWeightBasis ?? null,
     nameWeightReferencePct: fields.nameWeightReferencePct ?? null,
     nameWeightAboveReference: Boolean(fields.nameWeightAboveReference),
     nameWeightAboveCap: Boolean(fields.nameWeightAboveCap),
@@ -277,7 +374,7 @@ export function suggestMainPosition(row = {}, context = {}) {
   const theme = themeOf(row);
   const r = entry != null && invalidation != null ? round(entry - invalidation, 4) : null;
   const unrealizedRaw = r > 0 && last != null ? (last - entry) / r : null;
-  const weight = nameWeight(row, num(context.nav), kSpec.volClass);
+  const weight = nameWeight(row, context, kSpec.volClass);
   const missing = [];
   if (!(num(row.atr14) > 0)) missing.push('atr14');
   if (!(num(row.peakClose) > 0)) missing.push('peakClose');
@@ -359,46 +456,79 @@ export function suggestMainPosition(row = {}, context = {}) {
   return shell({ ...base, suggestedAction: 'HOLD', reason: 'below-2r' });
 }
 
-export function themeWeights(rows, nav) {
+function weightView(amount, denom, capitalUsd) {
+  const weightPct = denom > 0 ? round(amount / denom * 100, 4) : null;
+  const weightPctOfCapital = capitalUsd > 0 ? round(amount / capitalUsd * 100, 4) : null;
+  return {
+    weightPct,
+    weightPctOfCapital,
+    referenceCapPct: MAIN_TRAILING_PARAMS.themeReferencePct.slice(),
+    aboveReference: weightPct != null && weightPct > 35,
+    aboveUpperReference: weightPct != null && weightPct > 45,
+    heavy: weightPct != null && weightPct > 10
+  };
+}
+
+export function themeWeights(rows, options = {}) {
+  const nav = num(typeof options === 'number' ? options : options.nav);
+  const equityCostBasis = num(typeof options === 'number' ? null : options.equityCostBasis);
+  const capitalUsd = num(typeof options === 'number' ? null : options.capitalUsd);
   const buckets = new Map();
+  const kinds = new Set();
   let partial = false;
   let valued = 0;
   for (const row of rows || []) {
+    if (isCashRow(row)) continue;
     const qty = num(row.qty ?? row.quantity);
-    const mv = num(row.marketValue);
-    if (mv == null) {
+    const priced = positionValue(row);
+    if (!priced) {
       if (qty > 0) partial = true;
       continue;
     }
+    kinds.add(priced.kind);
     const label = themeOf(row) || 'unspecified';
     const key = label.toLowerCase();
-    const abs = Math.abs(mv);
-    valued += abs;
-    const bucket = buckets.get(key) || { theme: label, marketValue: 0 };
-    bucket.marketValue += abs;
+    valued += priced.amount;
+    const bucket = buckets.get(key) || { theme: label, amount: 0, kind: priced.kind };
+    bucket.amount += priced.amount;
     buckets.set(key, bucket);
   }
-  const basisNav = num(nav);
-  const denom = basisNav > 0 ? basisNav : valued;
-  const themeWeightBasis = basisNav > 0 ? 'nav' : (valued > 0 ? 'market-value-sum' : null);
-  const weights = [...buckets.values()].map((bucket) => {
-    const weightPct = denom > 0 ? round(bucket.marketValue / denom * 100, 4) : null;
+  let denom = 0;
+  let themeWeightBasis = null;
+  if (kinds.has('market') && !kinds.has('cost')) {
+    denom = nav > 0 ? nav : valued;
+    themeWeightBasis = nav > 0 ? 'nav' : (valued > 0 ? 'market-value-sum' : null);
+  } else if (kinds.has('cost') && !kinds.has('market')) {
+    denom = equityCostBasis > 0 ? equityCostBasis : valued;
+    themeWeightBasis = valued > 0 ? 'cost' : null;
+  } else if (kinds.size) {
+    denom = valued;
+    themeWeightBasis = 'mixed';
+  }
+  const weights = [...buckets.values()].map((bucket) => ({
+    theme: bucket.theme,
+    marketValue: bucket.kind === 'market' ? round(bucket.amount, 2) : null,
+    costBasis: bucket.kind === 'cost' ? round(bucket.amount, 2) : null,
+    ...weightView(bucket.amount, denom, capitalUsd)
+  })).sort((a, b) => a.theme.localeCompare(b.theme));
+  const themeFamilies = Object.entries(THEME_FAMILIES).map(([family, themes]) => {
+    const amount = themes.reduce((sum, theme) => sum + (buckets.get(theme)?.amount || 0), 0);
+    if (!(amount > 0)) return null;
     return {
-      theme: bucket.theme,
-      marketValue: round(bucket.marketValue, 2),
-      weightPct,
-      referenceCapPct: MAIN_TRAILING_PARAMS.themeReferencePct.slice(),
-      aboveReference: weightPct != null && weightPct > 35,
-      aboveUpperReference: weightPct != null && weightPct > 45
+      family,
+      themes: themes.filter((theme) => buckets.has(theme)),
+      ...weightView(amount, denom, capitalUsd)
     };
-  }).sort((a, b) => a.theme.localeCompare(b.theme));
+  }).filter(Boolean).sort((a, b) => a.family.localeCompare(b.family));
   return {
     themeWeights: weights,
+    themeFamilies,
     themeWeightSumPct: weights.length ? round(weights.reduce((sum, row) => sum + (row.weightPct || 0), 0), 4) : null,
     themeWeightBasis,
     themeWeightsPartial: partial,
-    themeConcentrationReview: weights.some((row) => row.aboveReference),
-    themeMonitorOnly: true
+    themeConcentrationReview: weights.some((row) => row.aboveReference) || themeFamilies.some((row) => row.aboveReference),
+    themeMonitorOnly: true,
+    themeFamilyNote: 'ai-linked 与 semi、ai-power 重叠，不能把这几个家族再加总。成本权重不是市值。'
   };
 }
 
@@ -438,10 +568,21 @@ export function hwmStatus(input = {}) {
 
 export function assessMainTrailing(input = {}) {
   const rows = input.positions || input.holdings || [];
+  const equityRows = rows.filter((row) => !isCashRow(row));
   const hwm = hwmStatus(input);
-  const themes = themeWeights(rows, hwm.nav);
-  const positions = rows
-    .map((row) => suggestMainPosition(row, { nav: hwm.nav }))
+  const cash = bookCash(input);
+  const cost = equityCostBasisOf(input, equityRows);
+  const capitalAtCostUsd = cost.equityCostBasisUsd != null && cash.cashUsd != null
+    ? round(cost.equityCostBasisUsd + cash.cashUsd, 2)
+    : null;
+  const themes = themeWeights(equityRows, {
+    nav: hwm.nav,
+    equityCostBasis: cost.equityCostBasisUsd,
+    capitalUsd: capitalAtCostUsd
+  });
+  const quoteContext = { nav: hwm.nav, equityCostBasis: cost.equityCostBasisUsd };
+  const positions = equityRows
+    .map((row) => suggestMainPosition(row, quoteContext))
     .filter((row) => row.symbol);
   positions.sort((a, b) => a.symbol.localeCompare(b.symbol) || String(a.suggestedAction).localeCompare(String(b.suggestedAction)));
   const actions = {};
@@ -452,16 +593,23 @@ export function assessMainTrailing(input = {}) {
     liveTradingAuthority: false,
     placesOrders: false,
     autoTrim: false,
+    autoTrade7811: false,
+    ownerBot: OWNER_BOT,
+    operableByKawaiiMeigu: false,
     researchDefaults: true,
     riskModeChangesAction: false,
     hwmMonitorOnly: true,
     scope: MAIN_TRAILING_SCOPE,
     params: MAIN_TRAILING_PARAMS,
+    snapshotAsOf: input.asOf || null,
     ...hwm,
     hwmFlowAdjusted: input.hwmFlowAdjusted === true,
     hwmNote: input.hwmFlowAdjusted === true
       ? '使用调用方给出的资金流调整后高水位'
       : '未声明资金流调整。出入金要由调用方先调高水位，这里不推断入金。',
+    ...cash,
+    ...cost,
+    capitalAtCostUsd,
     ...themes,
     positions,
     actions

@@ -34,12 +34,17 @@ test('research defaults stay labeled and do not authorize live trading', async (
   assert.equal(trail.researchDefaults, true);
   assert.equal(trail.hwmMonitorOnly, true);
   assert.equal(trail.riskModeChangesAction, false);
-  assert.deepEqual(trail.params.accountSizeUsd, [10000, 15000]);
+  assert.equal(trail.params.referenceBook, '7811');
+  assert.match(trail.params.accountSizeNote, /7811/);
+  assert.doesNotMatch(trail.params.accountSizeNote, /10k-15k/);
   assert.equal(trail.params.liveTradingAuthority, false);
   assert.equal(trail.params.label, 'research-defaults');
+  assert.equal(trail.ownerBot, 'Kawaii小胡');
+  assert.equal(trail.operableByKawaiiMeigu, false);
+  assert.equal(trail.autoTrade7811, false);
   assert.equal(trail.scope.equityBook, '7811');
-  assert.deepEqual(trail.scope.excluded, ['7983']);
-  assert.equal(trail.scope.wealthEquityBookLast4, '3469');
+  assert.equal(trail.scope.ownerBot, 'Kawaii小胡');
+  assert.deepEqual(trail.scope.excluded, ['3469', '7983']);
   assert.equal(status.liveTrading, false);
   assert.equal(trail.positions.every((row) => row.orderQty == null && row.observationOnly === true), true);
 });
@@ -382,9 +387,16 @@ test('7983 never receives main trailing, and a cost-only midday book stays on th
   assert.ok(costOnly.new_alerts.includes('MU'));
   const shaped = assessHeartbeat({ nav: 10000, positions: [rich] }, null, { now: NOW });
   assert.equal(shaped.mainTrailing.actions.NVDA, 'TRIM_50');
-  const byBook = assessHeartbeat({ accountLast4: '3469', nav: 10000, hwmNav: 10000, positions: [] }, null, { now: NOW });
-  assert.equal(byBook.mainTrailing.scope.equityBook, '7811');
-  assert.equal(byBook.mainTrailing.riskMode, 'normal');
+  const tactical = assessHeartbeat({
+    account: 'tactical',
+    accountLast4: '3469',
+    routine: 'main-trailing',
+    nav: 11000,
+    positions: [rich]
+  }, null, { now: NOW });
+  assert.equal(tactical.mainTrailing, null);
+  const book3469 = assessHeartbeat({ accountLast4: '3469', nav: 11000, hwmNav: 11000, positions: [rich] }, null, { now: NOW });
+  assert.equal(book3469.mainTrailing, null);
 });
 
 test('cli main-trailing exits 10 when the action changes and 0 on a price wiggle', async () => {
@@ -420,6 +432,82 @@ test('cli main-trailing exits 10 when the action changes and 0 on a price wiggle
   const woke = JSON.parse(third.stdout);
   assert.equal(woke.mainTrailing.actions.MRVL, 'TRIM_25');
   await rm(root, { recursive: true, force: true });
+});
+
+async function screenshot() {
+  const text = await readFile(new URL('./fixtures/positions-2026-10-15.json', import.meta.url), 'utf8');
+  return JSON.parse(text);
+}
+
+function family(status, name) {
+  return status.themeFamilies.find((row) => row.family === name);
+}
+
+test('2026-10-15 Self-Directed 7811 screenshot treats JPMPD as cash and scores cost concentration', async () => {
+  const book = await screenshot();
+  assert.equal(book.ownerBot, 'Kawaii小胡');
+  assert.equal(book.operableByKawaiiMeigu, false);
+  const status = assessMainTrailing(book);
+  assert.equal(status.ownerBot, 'Kawaii小胡');
+  assert.equal(status.operableByKawaiiMeigu, false);
+  assert.equal(status.autoTrade7811, false);
+  assert.equal(status.placesOrders, false);
+  assert.equal(status.cashUsd, 50098.32);
+  assert.equal(status.cashWithdrawable, true);
+  assert.deepEqual(status.cashSymbols, ['JPMPD']);
+  assert.equal(status.cashReconciled, true);
+  assert.equal(status.equityCostBasisUsd, 655193.39);
+  assert.equal(status.equityCostBasisReconciled, true);
+  assert.equal(status.capitalAtCostUsd, 705291.71);
+  assert.equal(status.themeWeightBasis, 'cost');
+  assert.equal(status.positions.some((row) => row.symbol === 'JPMPD'), false);
+  assert.equal(status.positions.length, 14);
+  assert.equal(status.positions.every((row) => row.suggestedAction === 'NO_TRADE' && row.orderQty == null && row.last == null), true);
+  assert.ok(status.positions.every((row) => row.missing.includes('last')));
+  const mu = status.positions.find((row) => row.symbol === 'MU');
+  assert.equal(mu.nameWeightBasis, 'cost');
+  assert.equal(mu.nameWeightPct, 11.67);
+  assert.equal(mu.nameWeightAboveReference, true);
+  assert.equal(mu.nameWeightAboveCap, false);
+  const rklb = status.positions.find((row) => row.symbol === 'RKLB');
+  assert.equal(rklb.volClass, 'event');
+  assert.equal(rklb.nameWeightPct, 10.4797);
+  assert.deepEqual(rklb.nameWeightReferencePct, [4, 8]);
+  assert.equal(rklb.nameWeightAboveCap, true);
+  assert.equal(family(status, 'semi').weightPct, 32.721);
+  assert.equal(family(status, 'semi').heavy, true);
+  assert.equal(family(status, 'semi').aboveReference, false);
+  assert.equal(family(status, 'ai-power').weightPct, 25.6407);
+  assert.equal(family(status, 'ai-power').weightPctOfCapital, 23.8194);
+  assert.equal(family(status, 'cyber').weightPct, 12.6056);
+  assert.equal(family(status, 'ai-linked').weightPct, 75.3155);
+  assert.equal(family(status, 'ai-linked').aboveUpperReference, true);
+  assert.equal(family(status, 'ai-linked').weightPctOfCapital, 69.9657);
+  assert.equal(status.themeConcentrationReview, true);
+  const folded = structuredClone(book);
+  delete folded.cashUsd;
+  folded.positions = [...folded.cashEquivalents, ...folded.positions];
+  delete folded.cashEquivalents;
+  const fromPosition = assessMainTrailing(folded);
+  assert.equal(fromPosition.cashUsd, 50098.32);
+  assert.equal(fromPosition.positions.some((row) => row.symbol === 'JPMPD'), false);
+  assert.equal(fromPosition.equityCostBasisUsd, 655193.39);
+  const quoted = structuredClone(book);
+  const muRow = quoted.positions.find((row) => row.symbol === 'MU');
+  muRow.last = 728.202;
+  muRow.prev = 728.202;
+  muRow.invalidation = 650;
+  muRow.atr14 = 20;
+  muRow.peakClose = 730;
+  muRow.stop = 650;
+  const hinted = assessMainTrailing(quoted);
+  const hintedMu = hinted.positions.find((row) => row.symbol === 'MU');
+  assert.equal(hintedMu.r, 78.202);
+  assert.equal(hintedMu.unrealizedR, 0);
+  assert.equal(hintedMu.suggestedTrailStop, 680);
+  assert.equal(hintedMu.suggestedAction, 'HOLD');
+  assert.equal(hinted.positions.filter((row) => row.symbol !== 'MU').every((row) => row.suggestedAction === 'NO_TRADE' && row.last == null), true);
+  assert.equal(hinted.themeWeightBasis, 'cost');
 });
 
 test('7983 prefilter defaults and the 3469/7983 fill map stay unchanged', async () => {
