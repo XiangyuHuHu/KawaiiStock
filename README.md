@@ -6,7 +6,7 @@
 
 - **算卦**：梅花个股卦、奇门九宫、方向正确率。接口在 `/api/oracle`、`/api/oracle/symbols`、`/api/oracle/accuracy`、`/api/oracle/current`，给每日意见和外部简报读。
 - **算法 / K 线**：观察池筛选、每日观察、周期阶段、价位图和今日买卖草稿。这些是编码后的多空与价位，不是下单。
-- **持仓观察**：账户叠加、主账户手改、小账户持仓快照、止损对照、风险视图。只观察，不发实盘单。
+- **持仓观察**：账户叠加、主账户手改、小账户持仓快照、止损对照、风险视图。只观察，不发实盘单。Self-Directed ••••7811 另有一条只观察的权益追踪：`npm run bot:heartbeat -- --input snapshot.json --routine main-trailing`。它写建议动作，不发单。规则见 `docs/main-account-trailing-v1.md`。
 - **纸上实验**：0A–0H 账本还在。0D 跟算卦，0F / 0G / 0H 跟价格结构。0E 只处理已经记在账上的期权（止损、止盈、到期），不再按期权扫描开新仓。
 - **每日意见**：综合每日观察、算卦和当日推荐。期权不进这份意见。
 
@@ -33,3 +33,4 @@ npm start
 - `npm run paper`：纸上账本
 - `npm run recs`：生成推荐
 - `npm run validate:strategy`：策略验证
+- `npm run bot:heartbeat -- --input snapshot.json --routine main-trailing --exit-code`：7811 权益追踪。沉默退出码 0，需要看一眼时退出码 10。午间比对把 `--routine` 换成 `midday`。

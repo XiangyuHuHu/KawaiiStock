@@ -12,7 +12,8 @@
     "recs": "node --input-type=module -e \"import { buildRecommendations } from './src/recommend.js'; console.log(JSON.stringify(await buildRecommendations(), null, 2))\"",
     "daily": "node scripts/daily.js",
     "order": "node scripts/order.js",
-    "paper": "node scripts/paper.js"
+    "paper": "node scripts/paper.js",
+    "bot:heartbeat": "node scripts/bot-heartbeat.js"
   },
   "dependencies": {
     "qimen-dunjia": "3.1.0"
