@@ -126,6 +126,13 @@ function renderPaper(data) {
         : (state.desk === '0g' || state.desk === '0h') && sources
           ? `涨停回调扫描 ${sources.scanned ?? 0} 只，买点 ${sources.eligible ?? 0} 个。${sources.l2 || ''}。${(sources.names || []).join('、')}`
           : '';
+  const diag = auto?.diagnostics;
+  const rejectionText = diag
+    ? Object.entries(diag.filterRejections || {}).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([reason, count]) => `${reason} ×${count}`).join('；')
+    : '';
+  const diagLine = diag
+    ? `诊断：扫描 ${diag.scanned ?? '—'}，成交 ${diag.ordersPlaced ?? 0}${rejectionText ? `，过滤 ${rejectionText}` : ''}。`
+    : '';
   const sold = (auto?.reviews || []).filter((row) => row.action === 'SELL' || row.action === 'TRIM');
   const held = (auto?.reviews || []).filter((row) => row.action === 'HOLD');
   const reviewLine = state.desk === '0e'
@@ -141,7 +148,7 @@ function renderPaper(data) {
         : '卖出判断在持仓表：跌破止损就卖，盈利没到倍数就拿着。';
   const skipLine = (auto?.skips || []).map((row) => row.message || row.reason).filter(Boolean).slice(0, 3).join('；');
   const autoLine = auto
-    ? `上次纸上尝试 ${etStamp(auto.at || auto.date)}：成交 ${auto.fillCount ?? 0} · 跳过 ${auto.skipCount ?? 0}。${sourceLine}${skipLine ? `${skipLine}。` : ''}${reviewLine}`
+    ? `上次纸上尝试 ${etStamp(auto.at || auto.date)}：成交 ${auto.fillCount ?? 0} · 跳过 ${auto.skipCount ?? 0}。${diagLine}${sourceLine}${skipLine ? `${skipLine}。` : ''}${reviewLine}`
     : `还没运行纸上过闸。${reviewLine}`;
   const valuationLine = ledger.valuationFresh === false ? '估值含过期股票报价或期权历史成交价，不代表当前可卖出净值。' : '';
   setStatus(mode !== 'NORMAL'

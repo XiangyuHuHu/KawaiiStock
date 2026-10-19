@@ -499,7 +499,8 @@ export async function runDailyJob(opts = {}) {
             ok: row.ok !== false,
             fills: row.fills?.length ?? 0,
             skipped: row.skipped?.length ?? 0,
-            note: row.note
+            note: row.note,
+            diagnostics: row.diagnostics || null
           }]))
         }
         : { skipped: true },
@@ -510,7 +511,7 @@ export async function runDailyJob(opts = {}) {
         fills: row?.ledger?.fills?.length ?? 0,
         mode: row?.mode || 'NORMAL'
       }])),
-      note: '每日流水触发八本纸上账：0A–0F，以及 0G 小孟A股、0H 小孟美股。0E 不再按期权扫描开新仓，已有合约仍走止损。不是实盘，不写模拟操作。'
+      note: '每日流水触发此刻开着的纸上账。0G 只在北京时间 9:30–11:30、13:00–15:00，其余只在美东 9:30–16:00。盘中要连续跑用 npm run paper:daemon。0E 不再按期权扫描开新仓。不是实盘，不写模拟操作。'
     };
   } catch (error) {
     payload.paper = { ok: false, error: error.message, note: '纸上实验失败，保留其他步骤结果并标记任务部分完成。' };

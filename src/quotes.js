@@ -126,6 +126,52 @@ async function fetchNasdaqChart(symbol, assetClass = 'stocks') {
   };
 }
 
+/** Nasdaq summary 的 MarketCap 是总市值，不是流通市值。没有这个字段就返回 null。 */
+export function nasdaqSummaryMarketCap(json) {
+  const raw = json?.data?.summaryData?.MarketCap?.value;
+  const cap = parseMoney(raw);
+  return cap > 0 ? cap : null;
+}
+
+async function fetchNasdaqMarketCap(symbol) {
+  for (const assetClass of ['stocks', 'etf']) {
+    try {
+      const url = `https://api.nasdaq.com/api/quote/${encodeURIComponent(symbol)}/summary?assetclass=${assetClass}`;
+      const response = await fetch(url, {
+        headers: {
+          Accept: 'application/json',
+          'User-Agent': UA,
+          Origin: 'https://www.nasdaq.com',
+          Referer: `https://www.nasdaq.com/market-activity/stocks/${String(symbol).toLowerCase()}`
+        },
+        signal: AbortSignal.timeout(8000)
+      });
+      if (!response.ok) continue;
+      const cap = nasdaqSummaryMarketCap(await response.json());
+      if (cap > 0) return cap;
+    } catch {
+      // 下一档 assetclass
+    }
+  }
+  return null;
+}
+
+export async function loadMarketCaps(symbols, { concurrency = 4 } = {}) {
+  const unique = [...new Set(symbols.filter(Boolean))];
+  const out = {};
+  let index = 0;
+  async function worker() {
+    while (index < unique.length) {
+      const current = index;
+      index += 1;
+      const symbol = unique[current];
+      out[symbol] = await fetchNasdaqMarketCap(symbol);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, unique.length || 1) }, () => worker()));
+  return out;
+}
+
 export async function loadQuotes(symbols, { concurrency = 4 } = {}) {
   const unique = [...new Set(symbols.filter(Boolean))];
   const out = {};
