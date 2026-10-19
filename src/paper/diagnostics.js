@@ -9,7 +9,19 @@ function countReasons(rows) {
   return out;
 }
 
-/** 一轮纸上跑完后的柜台摘要：扫了多少、为什么被扔掉、下了几笔。 */
+function limitUpPoolStatus(session) {
+  const dynamic = session.sources?.universe?.dynamic;
+  if (!dynamic) return null;
+  return {
+    ok: !dynamic.error,
+    error: dynamic.error || null,
+    requestedDate: dynamic.requestedDate || null,
+    days: dynamic.days || [],
+    added: dynamic.added ?? 0
+  };
+}
+
+/** 一轮纸上跑完后的柜台摘要：扫了多少、为什么被扔掉、下了几笔。涨停池失败写在 limitUpPool，不再只留在被吞掉的异常里。 */
 export function buildDiagnostics(session = {}) {
   const orders = (session.fills || []).filter((row) => row && row.ok && !row.replay);
   const scan = session.scan || {};
@@ -27,7 +39,8 @@ export function buildDiagnostics(session = {}) {
     })),
     filterRejections: scan.rejections || {},
     skipRejections: countReasons(session.skipped),
-    microstructure: scan.microstructure || null
+    microstructure: scan.microstructure || null,
+    limitUpPool: limitUpPoolStatus(session)
   };
 }
 

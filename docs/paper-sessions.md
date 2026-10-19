@@ -42,12 +42,12 @@ Restart=on-failure
 
 `--force` 只忽略 `desk-config.json` 里的 `paper.autoAtOpen=false`，不绕过交易时段。
 
-每一轮写两份东西：
+每一轮写两份东西，文件名仍是美东日期，老的读取方式不用改：
 
-- `reports/YYYY-MM-DD-纸上实验.jsonl`：每次一行
+- `reports/YYYY-MM-DD-纸上实验.jsonl`：每次一行，含全部账本。`usDate`、`cnDate` 都在
 - `reports/YYYY-MM-DD-纸上实验.md`：这一天最近一轮的表
 
-表里有扫描数、买点数、成交和拒绝原因。每日任务 JSON 的 `paper.auto.sessions.*.diagnostics` 里也有同样的摘要。纸上页会显示最近一次诊断。
+A 股上午的美东日期还是前一天。0G 再写一份北京日期的 `reports/YYYY-MM-DD-纸上实验-A股.jsonl` 和 `.md`。后面如果只是「市场未开」，jsonl 照样追加，但不会用这份空跑覆盖已经有扫描结果的 A 股 markdown。表里有扫描数、买点数、成交、拒绝原因，以及涨停池失败。每日任务 JSON 的 `paper.auto.sessions.*.diagnostics` 里也有同样的摘要。纸上页会显示最近一次诊断。
 
 ## 0G 宇宙
 
@@ -55,7 +55,7 @@ Restart=on-failure
 
 可复现的底是 `lists/cn/小孟中小盘.md`。2026-10-19 用东财流通市值 `f21` 筛过，大约落在 54–186 亿，分成 AI算力、软件、半导体、机器人、新能源、军工。运行时再用行情市值滤一次。
 
-东财涨停池接口不接受历史日期，返回的总是当天。进程会把市值带内、且不是 ST 的涨停按行业写到 `data/paper/zt-pool/YYYY-MM-DD.json`。接下来几个交易日把这些快照并进宇宙，这样昨天的涨停才能参加板块共振。第一天没有快照时，只靠静态名单。
+东财涨停池必须带当天的北京日历日 `date=YYYYMMDD`。不带日期时返回 `rc=102`、`data=null`，更早的日期它也不给。成功的快照会写到 `data/paper/zt-pool/YYYY-MM-DD.json`，市值带内且不是 ST 的名字按行业并进接下来几个交易日的宇宙。拉取失败写进 0G 的 `diagnostics.limitUpPool`，也出现在当天的纸上报告里。第一天没有快照时，只靠静态名单。
 
 ## 0H 阈值
 
