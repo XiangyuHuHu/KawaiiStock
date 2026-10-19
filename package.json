@@ -13,6 +13,8 @@
     "daily": "node scripts/daily.js",
     "order": "node scripts/order.js",
     "paper": "node scripts/paper.js",
+    "paper:daemon": "node scripts/paper-daemon.js",
+    "paper:xiaomeng-backtest": "node scripts/paper-xiaomeng-backtest.js",
     "bot:heartbeat": "node scripts/bot-heartbeat.js",
     "martin:advice": "node scripts/martin-advice.js"
   },

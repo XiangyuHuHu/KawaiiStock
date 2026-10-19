@@ -1,11 +1,10 @@
-import { chinaStamp } from '../paths.js';
 import { sessionClosed } from '../market-time.js';
 import { loadUniverse } from '../universe.js';
 import { loadManyHistoricals } from '../historicals.js';
-import { loadQuotes } from '../quotes.js';
-import { fetchChinaQuotes, loadChinaWatchlists } from '../screener/cn-market-data.mjs';
+import { loadMarketCaps } from '../quotes.js';
+import { fetchChinaQuotes } from '../screener/cn-market-data.mjs';
 import { loadChinaOracleHistory } from '../oracle/cn-data.js';
-import { paperEquityNeedsReference } from './execution.js';
+import { loadXiaomengCnUniverse, loadXiaomengUsFallback } from './xiaomeng-universe.js';
 import {
   LIMIT_PULLBACK,
   chinaSessionClosed,
@@ -48,49 +47,61 @@ function shareBars(pack, market) {
   return bars.map((bar) => ({ ...bar, volume: (Number(bar.volume) || 0) * 100 }));
 }
 
-async function loadCnBook(now) {
-  const lists = await loadChinaWatchlists();
-  const bySymbol = new Map();
-  const members = {};
-  const listOf = {};
-  const companies = {};
-  for (const list of lists) {
-    members[list.title] = [];
-    for (const row of list.stocks || []) {
-      const symbol = String(row.symbol || '');
-      if (!/^\d{6}$/.test(symbol)) continue;
-      companies[symbol] = row.company || companies[symbol] || '';
-      if (!listOf[symbol]) listOf[symbol] = [];
-      if (!listOf[symbol].includes(list.title)) listOf[symbol].push(list.title);
-      if (!members[list.title].includes(symbol)) members[list.title].push(symbol);
-      bySymbol.set(symbol, true);
-    }
+const cnHistoryCache = new Map();
+const CN_HISTORY_TTL = 15 * 60 * 1000;
+
+async function cachedCnHistory(symbol) {
+  const hit = cnHistoryCache.get(symbol);
+  if (hit && Date.now() - hit.at < CN_HISTORY_TTL) return hit.value;
+  let value;
+  try {
+    value = await loadChinaOracleHistory(symbol);
+  } catch (error) {
+    value = { ok: false, bars: [], error: error.message };
   }
-  const symbols = [...bySymbol.keys()];
-  const packs = await pool(symbols, 4, async (symbol) => {
-    try {
-      return await loadChinaOracleHistory(symbol);
-    } catch (error) {
-      return { ok: false, bars: [], error: error.message };
-    }
-  });
+  cnHistoryCache.set(symbol, { at: Date.now(), value });
+  return value;
+}
+
+async function loadCnBook(now) {
+  const universe = await loadXiaomengCnUniverse({ now });
+  const symbols = universe.symbols;
+  const packs = await pool(symbols, 4, (symbol) => cachedCnHistory(symbol));
   const barsBySymbol = {};
   symbols.forEach((symbol, index) => {
     const bars = closedForMarket(shareBars(packs[index], 'cn'), 'cn', now);
     if (bars.length) barsBySymbol[symbol] = bars;
   });
-  return { market: 'cn', barsBySymbol, lists: listOf, members, companies, lot: 100 };
+  return {
+    market: 'cn',
+    barsBySymbol,
+    lists: universe.listOf,
+    members: universe.members,
+    companies: universe.companies,
+    seedCaps: universe.seedCaps,
+    universe: universe.universe,
+    lot: 100
+  };
 }
 
 async function loadUsBook(now) {
-  const universe = await loadUniverse();
-  const listOf = {};
-  const members = {};
-  for (const row of universe.symbols || []) {
-    listOf[row.symbol] = row.lists || [];
-    for (const title of row.lists || []) {
-      if (!members[title]) members[title] = [];
-      members[title].push(row.symbol);
+  const loaded = await loadUniverse();
+  const thin = Boolean(loaded.fallback) || (loaded.symbols || []).length < 8;
+  let listOf = {};
+  let members = {};
+  let universeNote = { file: 'vault', symbols: (loaded.symbols || []).length, fallback: false };
+  if (thin) {
+    const fallback = await loadXiaomengUsFallback();
+    listOf = fallback.listOf;
+    members = fallback.members;
+    universeNote = fallback.universe;
+  } else {
+    for (const row of loaded.symbols || []) {
+      listOf[row.symbol] = row.lists || [];
+      for (const title of row.lists || []) {
+        if (!members[title]) members[title] = [];
+        members[title].push(row.symbol);
+      }
     }
   }
   const symbols = Object.keys(listOf);
@@ -100,15 +111,7 @@ async function loadUsBook(now) {
     const bars = closedForMarket(history[symbol]?.bars, 'us', now);
     if (bars.length) barsBySymbol[symbol] = bars;
   }
-  return { market: 'us', barsBySymbol, lists: listOf, members, companies: {}, lot: 1 };
-}
-
-async function yahooCap(symbol) {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=5d&interval=1d`;
-  const response = await fetch(url, { headers: { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(8000) });
-  if (!response.ok) return null;
-  const cap = (await response.json())?.chart?.result?.[0]?.meta?.marketCap;
-  return Number(cap) > 0 ? Number(cap) : null;
+  return { market: 'us', barsBySymbol, lists: listOf, members, companies: {}, seedCaps: {}, universe: universeNote, lot: 1 };
 }
 
 async function capsFor(market, symbols) {
@@ -119,9 +122,8 @@ async function capsFor(market, symbols) {
     for (const symbol of symbols) caps[symbol] = quotes.get(symbol)?.floatMarketCap ?? null;
     return caps;
   }
-  const values = await pool(symbols, 4, (symbol) => yahooCap(symbol).catch(() => null));
-  symbols.forEach((symbol, index) => { caps[symbol] = values[index]; });
-  return caps;
+  // Nasdaq summary 只有总市值。Yahoo chart 的 meta.marketCap 已经空了，不能再当过滤依据。
+  return loadMarketCaps(symbols);
 }
 
 export async function prepareXiaomeng(desk, now = new Date()) {
@@ -132,6 +134,9 @@ export async function prepareXiaomeng(desk, now = new Date()) {
     if (setup.ok) rough.push(symbol);
   }
   const caps = await capsFor(book.market, rough);
+  for (const [symbol, cap] of Object.entries(book.seedCaps || {})) {
+    if (!(caps[symbol] > 0) && cap > 0) caps[symbol] = cap;
+  }
   const picked = selectXiaomeng({
     market: book.market,
     barsBySymbol: book.barsBySymbol,
@@ -140,7 +145,7 @@ export async function prepareXiaomeng(desk, now = new Date()) {
     caps,
     companies: book.companies
   });
-  return { ...book, ...picked, caps };
+  return { ...book, ...picked, caps, rulesId: picked.rules };
 }
 
 export function xiaomengExits(ledger, barsBySymbol, { market, lot }) {
@@ -173,4 +178,4 @@ export function xiaomengQuote(market, row) {
   return row;
 }
 
-export { LIMIT_PULLBACK, floatOk, sectorResonance, sizeLimitPullback, chinaStamp };
+export { LIMIT_PULLBACK, floatOk, sectorResonance, sizeLimitPullback };

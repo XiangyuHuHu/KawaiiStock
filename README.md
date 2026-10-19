@@ -32,7 +32,8 @@ npm start
 - `npm start` / `npm run dev`：研究台
 - `npm test`：测试
 - `npm run daily`：每日流水（持仓、推荐、模拟、观察、算卦、意见、纸上实验）
-- `npm run paper`：纸上账本
+- `npm run paper`：纸上账本。`npm run paper -- --auto` 跑此刻开着的市场
+- `npm run paper:daemon`：常驻纸上进程，开市期间大约每 20 分钟跑一次。只改纸上账，不发券商单。见 `docs/paper-sessions.md`
 - `npm run recs`：生成推荐
 - `npm run validate:strategy`：策略验证
 - `npm run bot:heartbeat -- --input snapshot.json --routine main-trailing --exit-code`：7811 权益追踪。沉默退出码 0，需要看一眼时退出码 10。午间比对把 `--routine` 换成 `midday`。

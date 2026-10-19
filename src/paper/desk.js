@@ -1,9 +1,8 @@
 import { mkdir, readFile, writeFile, rename, rmdir, readdir } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
-import { DATA_DIR, OBSIDIAN_PAPER, isUsSessionDay, lastSessionStamp, recsDir, todayStamp } from '../paths.js';
+import { DATA_DIR, OBSIDIAN_PAPER, chinaStamp, isUsSessionDay, lastSessionStamp, recsDir, todayStamp } from '../paths.js';
 import { sessionClosed, sessionOpenMs } from '../market-time.js';
-import { loadQuotes } from '../quotes.js';
 import { loadLimits, PAPER_DESKS, paperDeskOf } from '../risk/limits.js';
 import { checkOrder } from '../risk/service.js';
 import { bookState, loadRiskState, touchBook } from '../risk/state.js';
@@ -16,6 +15,7 @@ import { loadExpirationChain, loadOptionChain } from '../options/market.js';
 import { evaluateFreshness } from '../risk/freshness.js';
 import { resolveMode } from '../risk/mode.js';
 import { DESK_POLICY, exitLabel, exitPlan } from './policy.js';
+import { isCnEquity, loadEquityQuotes } from './quotes.js';
 
 export function paperPath(desk = '0b') {
   return join(DATA_DIR, 'paper', `${paperDeskOf(desk)}.json`);
@@ -183,10 +183,14 @@ async function refreshOptionMarks(ledger) {
   await Promise.all(Array.from({ length: Math.min(4, jobs.length) }, () => worker()));
 }
 
+function paperBookDay(desk, now = new Date()) {
+  return paperDeskOf(desk) === '0g' ? chinaStamp(now) : todayStamp(now);
+}
+
 async function markQuotes(ledger) {
   await refreshOptionMarks(ledger);
   const equities = ledger.positions.filter((pos) => instrumentOf(pos.instrument) === 'equity');
-  const quotes = await loadQuotes(equities.map((pos) => pos.symbol));
+  const quotes = await loadEquityQuotes(equities.map((pos) => pos.symbol));
   let valuationFresh = true;
   for (const pos of ledger.positions) {
     if (instrumentOf(pos.instrument) === 'option') {
@@ -221,7 +225,7 @@ export async function paperBookSnapshot(state, desk = '0b') {
     buyingPower: ledger.cash,
     peakNav: peak,
     positions: ledger.positions,
-    realizedPnlToday: paperDayPnl(ledger, todayStamp()),
+    realizedPnlToday: paperDayPnl(ledger, paperBookDay(id)),
     realizedPnlWeek: Number(slice.pnlWeek) || 0,
     mode: slice.mode,
     modeReason: slice.reason,
@@ -481,7 +485,8 @@ async function placePaperOrderLocked(raw = {}, internal = {}) {
   if (isOption && reducing && trustedLeg && !(num(trustedLeg.quoteAt) > 0)) {
     raw = { ...raw, paperReference: true };
   }
-  const quotes = isOption ? {} : await loadQuotes([quoteSymbol]);
+  const supplied = !isOption && isCnEquity(quoteSymbol) && raw.quote?.ok && num(raw.quote.last) > 0 ? raw.quote : null;
+  const quotes = isOption || supplied ? {} : await loadEquityQuotes([quoteSymbol]);
   const quote = isOption
     ? {
       ok: num(trustedLeg?.bid) > 0 && num(trustedLeg?.ask) > 0 && num(trustedLeg?.ask) >= num(trustedLeg?.bid),
@@ -491,7 +496,7 @@ async function placePaperOrderLocked(raw = {}, internal = {}) {
       quoteAt: num(trustedLeg?.quoteAt),
       quoteMode: trustedLeg?.quoteMode || null
     }
-    : quotes[quoteSymbol];
+    : (supplied || quotes[quoteSymbol]);
   const last = quote?.ok ? quote.last : null;
   const order = {
     ...raw,
@@ -523,7 +528,7 @@ async function placePaperOrderLocked(raw = {}, internal = {}) {
   const qty = Number(order.qty);
   const side = String(order.side).toLowerCase();
   const instrument = String(order.instrument || 'equity').toLowerCase();
-  const date = internal.date || todayStamp();
+  const date = internal.date || raw.fillDate || paperBookDay(desk);
   const pos = findPosition(ledger.positions, order);
   const fill = {
     id: checked.decision.id,
@@ -558,12 +563,12 @@ async function placePaperOrderLocked(raw = {}, internal = {}) {
 
   const state = await loadRiskState();
   const slice = bookState(state, desk);
-  const today = todayStamp();
-  const pnlDay = paperDayPnl(marked, today);
+  const bookDay = paperBookDay(desk);
+  const pnlDay = paperDayPnl(marked, bookDay);
   await touchBook(state, desk, {
     peakNav: Math.max(Number(slice.peakNav) || 0, marked.peakNav || 0),
     pnlDay,
-    pnlWeek: (Number(slice.pnlWeek) || 0) + (date === today ? Number(fill.realizedPnl || 0) : 0)
+    pnlWeek: (Number(slice.pnlWeek) || 0) + (date === bookDay ? Number(fill.realizedPnl || 0) : 0)
   });
   const written = await writePaperDay(marked, date);
   return {

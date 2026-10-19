@@ -6,7 +6,11 @@ import { loadQuotes } from '../quotes.js';
 import { paperDeskOf } from '../risk/limits.js';
 import { canOpen } from '../risk/mode.js';
 import { getPaperView, loadPaperLedger, placePaperOrder, quoteHeldOption, recordPaperSession, sweepPaperStops, trailPaperStop } from './desk.js';
-import { paperEquityNeedsReference, regularPaperSession } from './execution.js';
+import { paperEquityNeedsReference } from './execution.js';
+import { buildDiagnostics } from './diagnostics.js';
+import { writePaperRunReport } from './report.js';
+import { liveChase } from './limit-pullback.js';
+import { marketFlags, paperMarketOf, paperSessionOpen, desksForSession } from './sessions.js';
 import { hexagramLongs, oracleExit, optionPaperExit, qimenLongs, sameOptionContract } from './signals.js';
 import { appendAudit } from '../risk/audit.js';
 import { buildCurrentQimen } from '../oracle/qimen-current.js';
@@ -53,8 +57,8 @@ const SESSION_NOTE = {
   oracle: '0D 算卦对照：$100k 纸上。偏涨试买。当日判断为跌并且有持仓就卖。不是预测，不是实盘。',
   options: '0E 期权账本：$100k 纸上。研究台已关闭，不按扫描开新仓。已有合约跌 20% 平仓，离开研究名单且涨了 40% 才止盈，临近到期平仓。不是实盘。',
   momentum: '0F Claude 动量：$100k 纸上。全 list 按 6 个月涨幅÷波动排名，SPY/QQQ 在 200 日线上才开新仓。每仓风险 1%，3×ATR 吊灯止损只上移；跌破 100 日线或掉出前 20 名就卖。不是实盘。',
-  'xiaomeng-cn': '0G 小孟A股：¥10 万，3–4 只。涨停回调后放量站上 5 日线才买，跌破 10 日线或亏 6% 就清。不是实盘。',
-  'xiaomeng-us': '0H 小孟美股：$10 万，规则同小孟A股。大涨板按当天上涨至少 8% 且收在高点附近。不是实盘。'
+  'xiaomeng-cn': '0G 小孟A股：¥10 万，3–4 只。扫 lists/cn/小孟中小盘.md，不扫自选里的超大盘。涨停回调后放量站上 5 日线才买。不是实盘。',
+  'xiaomeng-us': '0H 小孟美股：$10 万。大涨板按当天至少上涨 5% 且收在高点附近，流通市值 $0.5B–$20B，同一名单至少 2 只共振。盘口缺失不否决。不是实盘。'
 };
 
 const REC_ID = { wealth: 'main', tactical: 'tactical', agentic: 'agentic' };
@@ -260,8 +264,15 @@ function collectAgentic(book, ledger, blocked, policy) {
 }
 
 async function execute(intent) {
-  if (!regularPaperSession()) {
-    return { ok: false, symbol: intent.symbol, side: intent.side, reason: 'outside-session', message: '非常规交易时段不下自动单；止损由日线回放处理' };
+  if (!paperSessionOpen(intent.desk || '0b')) {
+    const market = paperMarketOf(intent.desk || '0b');
+    return {
+      ok: false,
+      symbol: intent.symbol,
+      side: intent.side,
+      reason: 'outside-session',
+      message: market === 'cn' ? '不在 A 股交易时段，不下自动单' : '非常规交易时段不下自动单；止损由日线回放处理'
+    };
   }
   const result = await placePaperOrder(intent);
   if (!result.ok) {
@@ -1004,7 +1015,7 @@ export function xiaomengSessionDay(desk, date, clocks = {}) {
 }
 
 /** 0G 小孟A股 / 0H 小孟美股。涨停或大涨后的回调低吸，不占 0A–0C 名额。 */
-export async function runXiaomengSession({ date, force = false, desk = '0h' } = {}) {
+export async function runXiaomengSession({ date, force = false, desk = '0h', now = Date.now() } = {}) {
   const config = await readAutoConfig();
   const id = desk === '0g' ? '0g' : '0h';
   const policy = DESK_POLICY[id];
@@ -1021,15 +1032,32 @@ export async function runXiaomengSession({ date, force = false, desk = '0h' } = 
     session.skipped.push({ reason: 'disabled', message: 'desk-config.paper.autoAtOpen=false' });
     return finish(id, session, await loadPaperLedger(id));
   }
-  const prepared = await prepareXiaomeng(id);
+  if (!force && !paperSessionOpen(id, now)) {
+    session.skipped.push({
+      reason: 'outside-session',
+      message: id === '0g'
+        ? '不在 A 股交易时段（北京时间 9:30–11:30、13:00–15:00）'
+        : '不在美股常规交易时段（美东 9:30–16:00）'
+    });
+    return finish(id, session, await loadPaperLedger(id));
+  }
+  const prepared = await prepareXiaomeng(id, new Date(now));
   const ledger = await loadPaperLedger(id);
   session.sources = {
     strategy: LIMIT_PULLBACK.id,
     market: prepared.market,
+    rules: prepared.rulesId,
     scanned: prepared.scanned,
     eligible: prepared.buys.length,
-    l2: '封单、DDE、集合竞价没有数据源，这些条件不假装通过',
+    universe: prepared.universe || null,
+    l2: prepared.microstructure?.reason || '',
     names: prepared.buys.slice(0, 6).map((row) => `${row.symbol}:${row.shape}:${row.boards}板`)
+  };
+  session.scan = {
+    scanned: prepared.scanned,
+    eligible: prepared.buys.length,
+    rejections: prepared.rejections || {},
+    microstructure: prepared.microstructure || null
   };
   const exits = xiaomengExits(ledger, prepared.barsBySymbol, prepared);
   const quoteSymbols = [...new Set([
@@ -1042,7 +1070,14 @@ export async function runXiaomengSession({ date, force = false, desk = '0h' } = 
     const quotes = quoteSymbols.length ? await fetchChinaQuotes(quoteSymbols.map((symbol) => ({ symbol }))) : new Map();
     for (const symbol of quoteSymbols) {
       const row = quotes.get(symbol);
-      quoteMap.set(symbol, { ok: row?.price > 0, last: row?.price ?? null, quoteAt: row?.marketDate || null });
+      quoteMap.set(symbol, {
+        ok: row?.price > 0,
+        last: row?.price ?? null,
+        high: row?.high ?? null,
+        changePct: row?.dailyChange ?? null,
+        quoteAt: Date.now(),
+        source: 'eastmoney'
+      });
     }
   } else {
     const quotes = await loadQuotes(quoteSymbols);
@@ -1068,7 +1103,9 @@ export async function runXiaomengSession({ date, force = false, desk = '0h' } = 
       maxLoss: null,
       instrument: 'equity',
       reduceOnly: true,
-      paperReference: id === '0g' || paperEquityNeedsReference(quote),
+      paperReference: paperEquityNeedsReference(quote, now, prepared.market),
+      fillDate: day,
+      quote: id === '0g' ? quote : undefined,
       note: `paper-auto-xiaomeng:${plan.reason}`
     });
     (out.ok ? session.fills : session.skipped).push(out);
@@ -1092,6 +1129,10 @@ export async function runXiaomengSession({ date, force = false, desk = '0h' } = 
       session.skipped.push({ symbol: row.symbol, reason: 'quote-unavailable', message: '没有报价' });
       continue;
     }
+    if (liveChase({ market: prepared.market, symbol: row.symbol, changePct: quote?.changePct, last, high: quote?.high })) {
+      session.skipped.push({ symbol: row.symbol, reason: 'chase', message: '当天仍是大涨板，不追' });
+      continue;
+    }
     const sized = sizeLimitPullback({ nav, cash, price: last, lot: prepared.lot, positions: held.size });
     if (!sized) {
       session.skipped.push({ symbol: row.symbol, reason: 'size', message: '现金或整手不够，预留 10%' });
@@ -1107,7 +1148,9 @@ export async function runXiaomengSession({ date, force = false, desk = '0h' } = 
       stopPrice: sized.stop,
       maxLoss: sized.maxLoss,
       instrument: 'equity',
-      paperReference: id === '0g' || paperEquityNeedsReference(quote),
+      paperReference: paperEquityNeedsReference(quote, now, prepared.market),
+      fillDate: day,
+      quote: id === '0g' ? quote : undefined,
       theme: row.list || '',
       note: `paper-auto-xiaomeng:${row.shape}:${row.boards}`,
       strategy: { stage: 'limit-pullback', stageLabel: row.shape === 'ladder' ? '阶梯回调' : '震荡回调', score: row.boards }
@@ -1122,82 +1165,112 @@ export async function runXiaomengSession({ date, force = false, desk = '0h' } = 
   return finish(id, session, await loadPaperLedger(id));
 }
 
-/** 先 0A 质量，再 0B 进攻，再 0C。0D 算卦、0E 期权、0F 动量、0G/0H 小孟另账，不占用前三本的标的名额。 */
-export async function runPaperOpen({ date, recs, force = false, desk } = {}) {
+function closedDeskSession(id) {
+  const market = paperMarketOf(id);
+  const session = {
+    ok: true,
+    liveTrading: false,
+    auto: true,
+    desk: id,
+    style: (DESK_POLICY[id] || {}).style || null,
+    fills: [],
+    skipped: [{
+      reason: 'outside-session',
+      message: market === 'cn'
+        ? '不在 A 股交易时段（北京时间 9:30–11:30、13:00–15:00），本轮不跑'
+        : '不在美股常规交易时段（美东 9:30–16:00），本轮不跑'
+    }],
+    reviews: [],
+    note: '市场未开'
+  };
+  session.diagnostics = buildDiagnostics(session);
+  return session;
+}
+
+/** 先 0A 质量，再 0B 进攻，再 0C。0D 算卦、0E 期权、0F 动量、0G/0H 小孟另账，不占用前三本的标的名额。每个账本只在自己的市场开着时跑。 */
+export async function runPaperOpen({ date, recs, force = false, desk, now = Date.now() } = {}) {
   const config = await readAutoConfig();
   const want = desksWanted(desk, config);
+  const { open, closed } = desksForSession(want, now);
   const stops = {};
   for (const id of want) {
     if (id === '0e') continue;
     try { stops[id] = await sweepPaperStops(id, id === '0g' ? { loader: chinaStopLoader } : {}); }
     catch (error) { stops[id] = { ok: false, desk: id, fills: [], error: error.message }; }
   }
-  if (!regularPaperSession()) {
-    return {
+  const sessions = Object.fromEntries(closed.map((id) => [id, closedDeskSession(id)]));
+  if (!open.length) {
+    const result = {
       ok: true,
       liveTrading: false,
       auto: true,
       outsideSession: true,
-      date: date || todayStamp(),
-      sessions: {},
+      markets: marketFlags(now),
+      date: date || todayStamp(new Date(now)),
+      sessions,
       stops,
-      note: '非美股常规交易时段：只按日线最低价回放券商止损，不开新仓、不做主观卖出。开盘后（美东 9:30–16:00）再跑才会下自动单。'
+      note: '当前没有开着的市场。A 股只在北京时间 9:30–11:30、13:00–15:00 的交易日跑，美股只在美东 9:30–16:00。这轮只回放止损，不下自动单。'
     };
+    await writePaperRunReport(result, now).catch((error) => { result.reportError = error.message; });
+    return result;
   }
   const mainHeld = await liveAccountSymbols('main');
   const tacticalHeld = await liveAccountSymbols('tactical');
   const existing0a = await paperSymbols('0a');
   const existing0b = await paperSymbols('0b');
   const existing0c = await paperSymbols('0c');
-  const sessions = {};
-
-  if (want.includes('0a')) {
+  if (open.includes('0a')) {
     const blocked = new Set([...mainHeld, ...existing0b, ...existing0c]);
     sessions['0a'] = await runPaperSession({ date, recs, desk: '0a', force, blockedSymbols: blocked });
   }
   const opened0a = openedBuys(sessions['0a']);
-  if (want.includes('0b')) {
+  if (open.includes('0b')) {
     const blocked = new Set([...mainHeld, ...tacticalHeld, ...existing0a, ...opened0a, ...existing0c]);
     sessions['0b'] = await runPaperSession({ date, recs, desk: '0b', force, blockedSymbols: blocked });
   }
   const opened0b = openedBuys(sessions['0b']);
-  if (want.includes('0c')) {
+  if (open.includes('0c')) {
     const blocked = new Set([...existing0a, ...opened0a, ...existing0b, ...opened0b]);
     sessions['0c'] = await runPaperSession({ date, recs, desk: '0c', force, blockedSymbols: blocked });
   }
-  if (want.includes('0d')) {
+  if (open.includes('0d')) {
     try { sessions['0d'] = await runOracleSession({ date, force }); }
     catch (error) { sessions['0d'] = { ok: false, desk: '0d', fills: [], skipped: [{ message: error.message }], note: error.message }; }
   }
-  if (want.includes('0e')) {
+  if (open.includes('0e')) {
     try { sessions['0e'] = await runOptionSession({ date, force }); }
     catch (error) { sessions['0e'] = { ok: false, desk: '0e', fills: [], skipped: [{ message: error.message }], note: error.message }; }
   }
-  if (want.includes('0f')) {
+  if (open.includes('0f')) {
     try { sessions['0f'] = await runMomentumSession({ date, force }); }
     catch (error) { sessions['0f'] = { ok: false, desk: '0f', fills: [], skipped: [{ message: error.message }], note: error.message }; }
   }
-  if (want.includes('0g')) {
-    try { sessions['0g'] = await runXiaomengSession({ date, force, desk: '0g' }); }
+  if (open.includes('0g')) {
+    try { sessions['0g'] = await runXiaomengSession({ date, force, desk: '0g', now }); }
     catch (error) { sessions['0g'] = { ok: false, desk: '0g', fills: [], skipped: [{ message: error.message }], note: error.message }; }
   }
-  if (want.includes('0h')) {
-    try { sessions['0h'] = await runXiaomengSession({ date, force, desk: '0h' }); }
+  if (open.includes('0h')) {
+    try { sessions['0h'] = await runXiaomengSession({ date, force, desk: '0h', now }); }
     catch (error) { sessions['0h'] = { ok: false, desk: '0h', fills: [], skipped: [{ message: error.message }], note: error.message }; }
   }
 
-  return {
+  const result = {
     ok: Object.values(sessions).every((session) => session.ok !== false && !session.recordingError),
     liveTrading: false,
     auto: true,
-    date: date || todayStamp(),
+    outsideSession: false,
+    markets: marketFlags(now),
+    date: date || todayStamp(new Date(now)),
     sessions,
     stops,
-    note: '0A 财富 + 0B 进攻 + 0C Agentic，然后 0D 算卦、0E 只处理已有期权、0F Claude 动量、0G 小孟A股、0H 小孟美股。后面几本不占用前三本标的。不是实盘。'
+    note: '每本账只在自己的市场开着时跑：0G 用北京时间 9:30–11:30、13:00–15:00，其余用美东 9:30–16:00。不是实盘。'
   };
+  await writePaperRunReport(result, now).catch((error) => { result.reportError = error.message; });
+  return result;
 }
 
 async function finish(desk, session, ledger) {
+  session.diagnostics = buildDiagnostics(session);
   const next = await recordPaperSession(desk, {
       date: session.date,
       at: new Date().toISOString(),
@@ -1211,7 +1284,8 @@ async function finish(desk, session, ledger) {
         reason: row.reason || null,
         message: row.message || null
       })),
-      reviews: session.reviews || []
+      reviews: session.reviews || [],
+      diagnostics: session.diagnostics
   });
   await appendAudit({
     type: 'proposal',

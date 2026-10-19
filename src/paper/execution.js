@@ -1,7 +1,9 @@
 import { createHash } from 'node:crypto';
 import { finiteNumber as num, instrumentOf } from '../numbers.js';
 import { evaluateFreshness } from '../risk/freshness.js';
-import { isUsSessionDay, todayStamp } from '../paths.js';
+import { chinaPaperSession, orderMarket, regularPaperSession } from './sessions.js';
+
+export { regularPaperSession } from './sessions.js';
 
 export function orderFingerprint(order) {
   const keys = ['symbol', 'side', 'qty', 'limitPrice', 'price', 'stopPrice', 'maxLoss', 'reduceOnly', 'expiration', 'strike', 'optionType'];
@@ -10,16 +12,18 @@ export function orderFingerprint(order) {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex');
 }
 
-export function paperEquityNeedsReference(quote, now = Date.now()) {
+export function paperEquityNeedsReference(quote, now = Date.now(), market = 'us') {
   if (!evaluateFreshness({ quoteAt: quote?.quoteAt, last: quote?.last }, now).fresh) return true;
-  return !regularPaperSession(now);
+  return market === 'cn' ? !chinaPaperSession(now) : !regularPaperSession(now);
 }
 
-export function regularPaperSession(now = Date.now()) {
-  const et = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hourCycle: 'h23', hour: '2-digit', minute: '2-digit', weekday: 'short' }).formatToParts(now);
-  const get = (key) => et.find((part) => part.type === key)?.value;
-  const minute = Number(get('hour')) * 60 + Number(get('minute'));
-  return !['Sat', 'Sun'].includes(get('weekday')) && isUsSessionDay(todayStamp(new Date(now))) && minute >= 570 && minute < 960;
+function sessionDenial(order, now) {
+  const market = orderMarket(order);
+  const open = market === 'cn' ? chinaPaperSession(now) : regularPaperSession(now);
+  if (open) return null;
+  return market === 'cn'
+    ? '纸上撮合只在 A 股交易时段运行（北京时间 9:30–11:30、13:00–15:00）'
+    : '纸上撮合只在美股常规交易时段运行';
 }
 
 /**
@@ -62,7 +66,8 @@ export function paperOptionExecution(order, quote, now = Date.now()) {
     };
   }
   if (!evaluateFreshness({ quoteAt: quote?.quoteAt, last: ask }, now).fresh) return deny('quote-stale', '合约 Bid/Ask 时间缺失或超过 180 秒，不成交');
-  if (!regularPaperSession(now)) return deny('outside-session', '纸上撮合只在美股常规交易时段运行');
+  const optionSession = sessionDenial(order, now);
+  if (optionSession) return deny('outside-session', optionSession);
   const buying = ['buy', 'add'].includes(String(order.side).toLowerCase());
   const limit = num(order.limitPrice ?? order.price);
   if (!(limit > 0) || !(num(order.qty) > 0)) return deny('invalid-order', '限价与数量必须为正数');
@@ -89,7 +94,8 @@ export function paperExecution(order, quote, now = Date.now()) {
     return { ok: true, price, referencePrice: reference, slippageBps: 5, fee: 0, quoteAt: quote.quoteAt ?? null, model: 'paper-equity-reference-v1', feeNote: '不在常规交易时段或报价已过 180 秒，按最近一次成交价记纸上仓' };
   }
   if (!evaluateFreshness({ quoteAt: quote.quoteAt, last: quote.last }, now).fresh) return deny('quote-stale', '行情源时间戳缺失或超过 180 秒，不成交');
-  if (!regularPaperSession(now)) return deny('outside-session', '纸上撮合只在美股常规交易时段运行');
+  const equitySession = sessionDenial(order, now);
+  if (equitySession) return deny('outside-session', equitySession);
   const buying = ['buy', 'add'].includes(String(order.side).toLowerCase());
   const limit = num(order.limitPrice ?? order.price);
   if (!(limit > 0) || !(num(order.qty) > 0)) return deny('invalid-order', '限价与数量必须为正数');

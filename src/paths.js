@@ -163,12 +163,62 @@ export function chinaStamp(date = new Date()) {
   return `${get('year')}-${get('month')}-${get('day')}`;
 }
 
+function dateSpan(start, end) {
+  const out = [];
+  let cursor = Date.parse(`${start}T00:00:00Z`);
+  const stop = Date.parse(`${end}T00:00:00Z`);
+  while (cursor <= stop) {
+    out.push(new Date(cursor).toISOString().slice(0, 10));
+    cursor += 86400000;
+  }
+  return out;
+}
+
+/** A 股休市。2025–2026 按交易所安排；2027–2028 只覆盖元旦、春节、清明、劳动节、国庆，调休补班未逐日核对。 */
+const CN_HOLIDAY_RANGES = [
+  ['2025-01-01', '2025-01-01'],
+  ['2025-01-28', '2025-02-04'],
+  ['2025-04-04', '2025-04-06'],
+  ['2025-05-01', '2025-05-05'],
+  ['2025-05-31', '2025-06-02'],
+  ['2025-10-01', '2025-10-08'],
+  ['2026-01-01', '2026-01-03'],
+  ['2026-02-15', '2026-02-23'],
+  ['2026-04-04', '2026-04-06'],
+  ['2026-05-01', '2026-05-05'],
+  ['2026-06-19', '2026-06-21'],
+  ['2026-09-25', '2026-09-27'],
+  ['2026-10-01', '2026-10-07'],
+  ['2027-01-01', '2027-01-01'],
+  ['2027-02-06', '2027-02-12'],
+  ['2027-04-03', '2027-04-05'],
+  ['2027-05-01', '2027-05-05'],
+  ['2027-10-01', '2027-10-07'],
+  ['2028-01-01', '2028-01-03'],
+  ['2028-01-26', '2028-02-01'],
+  ['2028-04-04', '2028-04-06'],
+  ['2028-05-01', '2028-05-05'],
+  ['2028-10-01', '2028-10-07']
+];
+
+export const CN_MARKET_CLOSED = new Set(CN_HOLIDAY_RANGES.flatMap(([start, end]) => dateSpan(start, end)));
+export const CN_CALENDAR_THROUGH = '2028-12-31';
+
 function shanghaiWeekday(date = new Date()) {
   const weekday = new Intl.DateTimeFormat('en-US', {
     timeZone: 'Asia/Shanghai',
     weekday: 'short'
   }).format(date);
   return { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }[weekday] ?? 0;
+}
+
+/** 北京时间的工作日，并且不在上面的休市表里。周末休市；调休补班的周六未单独开市。 */
+export function isChinaSessionDay(stamp) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(stamp || '')) return false;
+  if (CN_MARKET_CLOSED.has(stamp)) return false;
+  const probe = new Date(`${stamp}T12:00:00+08:00`);
+  const dow = shanghaiWeekday(Number.isNaN(probe.getTime()) ? new Date() : probe);
+  return dow !== 0 && dow !== 6;
 }
 
 /** 最近一个 A 股交易日（北京）。周末回退；节假日未单独表，缺文件会显示最近一次。 */

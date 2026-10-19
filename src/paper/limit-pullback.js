@@ -1,4 +1,4 @@
-/** 掘金涨停回调抄底。日线能核对的条件才开仓；Level-2、封单、DDE 没有数据源，不假装通过。 */
+/** 掘金涨停回调抄底。日线能核对的条件才开仓。盘口、封单、集合竞价没有数据时记为中性，不因此否决。 */
 
 export function chinaSessionClosed(day, now = new Date()) {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -38,37 +38,102 @@ export const LIMIT_PULLBACK = {
   volumeSpike: 1.5
 };
 
+/** A 股保持原规则：涨停、流通市值 50–200 亿、同名单至少 3 只共振。买点仍是跌破 5 日线后再放量站上。 */
+export const CN_PULLBACK = {
+  id: 'cn-v1',
+  strongPct: null,
+  closeNearHigh: 0.997,
+  minFloat: LIMIT_PULLBACK.minFloatCny,
+  maxFloat: LIMIT_PULLBACK.maxFloatCny,
+  minBoards: 3,
+  minListReturn: 0.03,
+  missingMicrostructure: 'neutral',
+  boardLookback: 3,
+  shapes: ['ladder', 'range'],
+  reclaim: 'cross',
+  sectorWindow: 1,
+  sectorAnyShape: false
+};
+
+/**
+ * 旧美股对照。流通市值约 $0.69B–$2.78B（50–200 亿人民币 / 7.2），大涨 8%，同名单至少 3 只。
+ * 盘口缺失在旧代码里没有写成否决，只是注释说「不假装通过」。v1-fail 才把缺失当成否决，用来对照假设。
+ */
+export const US_PULLBACK_V1 = {
+  id: 'us-v1',
+  strongPct: 0.08,
+  closeNearHigh: 0.997,
+  minFloat: LIMIT_PULLBACK.minFloatCny / FX,
+  maxFloat: LIMIT_PULLBACK.maxFloatCny / FX,
+  minBoards: 3,
+  minListReturn: 0.03,
+  missingMicrostructure: 'neutral',
+  boardLookback: 3,
+  shapes: ['ladder', 'range'],
+  reclaim: 'cross',
+  sectorWindow: 1,
+  sectorAnyShape: false
+};
+
+/**
+ * 美股没有 10% 涨停。5% 且收在高点附近大约是两倍日波动。
+ * 总市值放到 $0.5B–$20B：原带约 $0.7B–$2.8B 把主题名单里的中型股几乎全挡在外面。
+ * 共振从 3 只 / 中位数 3% 降到 2 只 / 1%，并且看前 3 个交易日里出现过大涨，不要求同一天。
+ * 买点不再强求跌破 5 日线再放量站上。2026-07-01 至 2026-10-16 的备用名单上，
+ * 大涨之后绝大多数交易日仍在 5 日线上方，那条 A 股条件一次都没成立。
+ * 改成：回撤没破 10 日线、收盘仍在 5 日线上、并且收在大涨收盘价下方，只取这段回撤的第一天。
+ * 跳空（pulse）在美股 5% 大涨里很常见，不再当成一字板丢掉。
+ */
+export const US_PULLBACK = {
+  id: 'us-v2',
+  strongPct: 0.05,
+  closeNearHigh: 0.995,
+  minFloat: 0.5e9,
+  maxFloat: 20e9,
+  minBoards: 2,
+  minListReturn: 0.01,
+  missingMicrostructure: 'neutral',
+  boardLookback: 3,
+  shapes: ['ladder', 'range', 'pulse'],
+  reclaim: 'shallow',
+  minPullback: 0.002,
+  sectorWindow: 3,
+  sectorAnyShape: true
+};
+
+export function marketRules(market, rules) {
+  if (rules) return rules;
+  return market === 'us' ? US_PULLBACK : CN_PULLBACK;
+}
+
 export function amountFloor(market) {
   return market === 'us' ? LIMIT_PULLBACK.minAmountCny / FX : LIMIT_PULLBACK.minAmountCny;
 }
 
-export function floatBand(market) {
-  const scale = market === 'us' ? 1 / FX : 1;
-  return {
-    min: LIMIT_PULLBACK.minFloatCny * scale,
-    max: LIMIT_PULLBACK.maxFloatCny * scale
-  };
+export function floatBand(market, rules = marketRules(market)) {
+  return { min: rules.minFloat, max: rules.maxFloat };
 }
 
-export function limitPct(symbol, market) {
-  if (market === 'us') return 0.08;
+export function limitPct(symbol, market, rules = marketRules(market)) {
+  if (market === 'us') return rules.strongPct;
   const text = String(symbol || '');
   if (text.startsWith('30') || text.startsWith('68')) return 0.195;
   if (text.startsWith('8') || text.startsWith('4')) return 0.295;
   return 0.095;
 }
 
-export function isStrongBar(bar, prev, symbol, market) {
+export function isStrongBar(bar, prev, symbol, market, rules = marketRules(market)) {
   if (!(prev?.close > 0) || !(bar?.close > 0) || !(bar.high > 0)) return false;
   const gain = bar.close / prev.close - 1;
-  return gain + 1e-9 >= limitPct(symbol, market) && bar.close >= bar.high * 0.997;
+  const pct = market === 'us' ? rules.strongPct : limitPct(symbol, 'cn');
+  return gain + 1e-9 >= pct && bar.close >= bar.high * rules.closeNearHigh;
 }
 
-export function boardShape(bars, index, symbol, market) {
+export function boardShape(bars, index, symbol, market, rules = marketRules(market)) {
   const bar = bars[index];
   const prev = bars[index - 1];
-  if (!isStrongBar(bar, prev, symbol, market)) return null;
-  const pct = limitPct(symbol, market);
+  if (!isStrongBar(bar, prev, symbol, market, rules)) return null;
+  const pct = market === 'us' ? rules.strongPct : limitPct(symbol, 'cn');
   const gap = bar.open > 0 ? bar.open / prev.close - 1 : 0;
   if (gap >= pct * 0.6) return 'pulse';
   const prior = [index - 3, index - 2, index - 1]
@@ -84,16 +149,16 @@ export function boardShape(bars, index, symbol, market) {
   return 'other';
 }
 
-export function boardRun(bars, end, symbol, market) {
+export function boardRun(bars, end, symbol, market, rules = marketRules(market)) {
   if (end < 1) return null;
   let count = 0;
   let at = end;
-  while (at > 0 && isStrongBar(bars[at], bars[at - 1], symbol, market)) {
+  while (at > 0 && isStrongBar(bars[at], bars[at - 1], symbol, market, rules)) {
     count += 1;
     at -= 1;
   }
   if (!count) return null;
-  return { count, end, shape: boardShape(bars, end, symbol, market) };
+  return { count, end, shape: boardShape(bars, end, symbol, market, rules) };
 }
 
 function sma(bars, length, index) {
@@ -109,36 +174,60 @@ function mean(values) {
 }
 
 /** 最近一根已收盘 K 线是否给出抄底买点。 */
-export function floatOk(floatCap, market) {
-  const band = floatBand(market);
+export function floatOk(floatCap, market, rules = marketRules(market)) {
+  const band = floatBand(market, rules);
   if (!(floatCap > 0)) return { ok: false, reason: '缺流通市值' };
-  if (floatCap < band.min || floatCap > band.max) return { ok: false, reason: '流通市值不在 50–200 亿区间' };
+  if (floatCap < band.min || floatCap > band.max) {
+    const reason = market === 'us'
+      ? `总市值不在 $${(band.min / 1e9).toFixed(1)}B–$${Math.round(band.max / 1e9)}B`
+      : '流通市值不在 50–200 亿区间';
+    return { ok: false, reason };
+  }
   return { ok: true };
 }
 
-export function entrySetup(bars, { symbol, market, company = '' } = {}) {
+/** 盘中已经走出大涨板就不再追。没有最高价时，涨幅到阈值也先让开。 */
+export function liveChase({ market = 'cn', symbol, changePct, last, high, rules = marketRules(market) } = {}) {
+  const pct = (market === 'us' ? rules.strongPct : limitPct(symbol, market, rules)) * 100;
+  if (!(Number(changePct) >= pct - 0.05)) return false;
+  if (Number(high) > 0 && Number(last) > 0) return last >= high * rules.closeNearHigh;
+  return true;
+}
+
+export function microstructureGate(book, rules = marketRules('us')) {
+  const src = book || {};
+  const hasDepth = Number(src.bidSize) > 0 && Number(src.askSize) > 0;
+  const hasAuction = src.auctionImbalance != null || Number(src.auctionVolume) > 0 || Number(src.sealAmount) > 0 || Number(src.dde) > 0;
+  if (hasDepth || hasAuction) return { ok: true, neutral: false, reason: '盘口或集合竞价有数据，不另设否决' };
+  if (rules.missingMicrostructure === 'fail') return { ok: false, neutral: false, reason: '盘口与集合竞价缺失' };
+  return { ok: true, neutral: true, reason: '盘口、封单、集合竞价没有数据源，记为中性，不因此否决' };
+}
+
+export function entrySetup(bars, { symbol, market, company = '', rules = marketRules(market) } = {}) {
   const deny = (reason) => ({ ok: false, reason });
   if (/ST/i.test(String(company || ''))) return deny('ST');
   if (!Array.isArray(bars) || bars.length < 25) return deny('日线不足');
   const n = bars.length - 1;
   const last = bars[n];
-  if (isStrongBar(last, bars[n - 1], symbol, market)) return deny('当天仍是大涨板，不追');
+  if (isStrongBar(last, bars[n - 1], symbol, market, rules)) return deny('当天仍是大涨板，不追');
   const amounts = bars.slice(n - 4, n + 1).map((bar) => bar.close * bar.volume);
   const avgAmount = mean(amounts);
   if (!(avgAmount >= amountFloor(market))) return deny('近 5 日成交额不足 1 亿');
 
+  const lookback = rules.boardLookback || 3;
+  const shapes = rules.shapes || ['ladder', 'range'];
   let run = null;
-  for (let ago = 1; ago <= 3; ago += 1) {
-    const found = boardRun(bars, n - ago, symbol, market);
+  for (let ago = 1; ago <= lookback; ago += 1) {
+    const found = boardRun(bars, n - ago, symbol, market, rules);
     if (found && found.end === n - ago) {
       run = found;
       break;
     }
   }
-  if (!run) return deny('近 3 日没有涨停或大涨板');
+  if (!run) return deny(`近 ${lookback} 日没有涨停或大涨板`);
   if (run.count >= 3) return deny('三板及以上，不做');
   if (run.count < 1 || run.count > 2) return deny('不是首板或二板');
-  if (!['ladder', 'range'].includes(run.shape)) return deny(`形态 ${run.shape || '无法归类'}，只留阶梯和震荡`);
+  if (!shapes.includes(run.shape)) return deny(`形态 ${run.shape || '无法归类'}，只留阶梯和震荡`);
 
   const boardClose = bars[run.end].close;
   let trough = boardClose;
@@ -152,12 +241,26 @@ export function entrySetup(bars, { symbol, market, company = '' } = {}) {
   const prevMa5 = sma(bars, 5, n - 1);
   const ma10 = sma(bars, 10, n);
   if (!(last.close > ma10) || !(prevMa5 > 0) || !(ma5 > 0)) return deny('均线不足');
-  if (!(bars[n - 1].close < prevMa5 && last.close >= ma5)) return deny('还在 5 日线下，等放量站上');
+  const cross = bars[n - 1].close < prevMa5 && last.close >= ma5;
   const baseVol = mean(bars.slice(n - 5, n).map((bar) => bar.volume));
-  if (!(baseVol > 0) || last.volume < baseVol * LIMIT_PULLBACK.volumeSpike) return deny('突破 5 日线但没有放量');
+  const volOk = baseVol > 0 && last.volume >= baseVol * LIMIT_PULLBACK.volumeSpike;
+  const depth = (boardClose - last.close) / boardClose;
+  const shallowToday = last.close >= ma5 && depth >= (rules.minPullback ?? 0.002) && depth <= LIMIT_PULLBACK.maxPullback;
+  let shallowYesterday = false;
+  if (rules.reclaim === 'shallow' && n - 1 > run.end) {
+    const priorMa5 = sma(bars, 5, n - 1);
+    const priorClose = bars[n - 1].close;
+    shallowYesterday = priorMa5 > 0 && priorClose >= priorMa5 && priorClose < boardClose;
+  }
+  const shallow = rules.reclaim === 'shallow' && shallowToday && !shallowYesterday;
+  if (!(cross && volOk) && !shallow) {
+    if (!cross && !shallowToday) return deny('还在 5 日线下，等放量站上');
+    if (cross && !volOk) return deny('突破 5 日线但没有放量');
+    return deny('回撤还没形成，或这段回撤已经报过');
+  }
   return {
     ok: true,
-    reason: '放量站上 5 日线',
+    reason: cross && volOk ? '放量站上 5 日线' : '回撤守住 5 日线',
     shape: run.shape,
     boards: run.count,
     boardDate: bars[run.end].date,
@@ -166,31 +269,69 @@ export function entrySetup(bars, { symbol, market, company = '' } = {}) {
   };
 }
 
-export function selectXiaomeng({ market, barsBySymbol = {}, lists = {}, members = {}, caps = {}, companies = {} } = {}) {
+export function selectXiaomeng({ market, barsBySymbol = {}, lists = {}, members = {}, caps = {}, companies = {}, rules = marketRules(market), book } = {}) {
   const buys = [];
   const skipped = [];
+  const rejections = {};
+  const bump = (reason) => { rejections[reason] = (rejections[reason] || 0) + 1; };
   let scanned = 0;
   for (const [symbol, bars] of Object.entries(barsBySymbol)) {
     if (!bars?.length) continue;
     scanned += 1;
-    const setup = entrySetup(bars, { symbol, market, company: companies[symbol] });
-    if (!setup.ok) continue;
-    const cap = floatOk(caps[symbol], market);
+    const setup = entrySetup(bars, { symbol, market, company: companies[symbol], rules });
+    if (!setup.ok) {
+      bump(setup.reason);
+      continue;
+    }
+    const cap = floatOk(caps[symbol], market, rules);
     if (!cap.ok) {
+      bump(cap.reason);
       skipped.push({ symbol, reason: 'float', message: cap.reason });
       continue;
     }
-    const sector = sectorResonance(symbol, { lists, members, barsBySymbol, market });
+    const sector = sectorResonance(symbol, { lists, members, barsBySymbol, market, rules });
     if (!sector.ok) {
+      bump(sector.reason);
       skipped.push({ symbol, reason: 'sector', message: sector.reason });
       continue;
     }
     buys.push({ symbol, ...setup, list: sector.list, price: bars.at(-1).close });
   }
-  return { scanned, buys, skipped };
+  const microstructure = microstructureGate(book, rules);
+  if (!microstructure.ok) {
+    for (const row of buys) {
+      bump(microstructure.reason);
+      skipped.push({ symbol: row.symbol, reason: 'microstructure', message: microstructure.reason });
+    }
+    return { scanned, buys: [], skipped, rejections, microstructure, rules: rules.id };
+  }
+  return { scanned, buys, skipped, rejections, microstructure, rules: rules.id };
 }
 
-export function sectorResonance(symbol, { lists = {}, members = {}, barsBySymbol = {}, market = 'cn' } = {}) {
+export function replayPullbackSignals({ market = 'us', barsBySymbol = {}, lists = {}, members = {}, caps = {}, companies = {}, rules, from, to } = {}) {
+  const dates = [...new Set(Object.values(barsBySymbol).flatMap((bars) => (bars || []).map((bar) => bar.date)))].sort();
+  const events = [];
+  for (const date of dates) {
+    if (from && date < from) continue;
+    if (to && date > to) continue;
+    const sliced = {};
+    for (const [symbol, bars] of Object.entries(barsBySymbol)) {
+      const rows = (bars || []).filter((bar) => bar.date <= date);
+      if (rows.length && rows.at(-1).date === date) sliced[symbol] = rows;
+    }
+    const picked = selectXiaomeng({ market, barsBySymbol: sliced, lists, members, caps, companies, rules });
+    if (picked.buys.length) events.push({ date, symbols: picked.buys.map((row) => row.symbol) });
+  }
+  const active = rules || marketRules(market);
+  return {
+    rules: active.id,
+    signals: events.reduce((sum, row) => sum + row.symbols.length, 0),
+    days: events.length,
+    events
+  };
+}
+
+export function sectorResonance(symbol, { lists = {}, members = {}, barsBySymbol = {}, market = 'cn', rules = marketRules(market) } = {}) {
   const titles = lists[symbol] || [];
   for (const title of titles) {
     const names = members[title] || [];
@@ -201,13 +342,29 @@ export function sectorResonance(symbol, { lists = {}, members = {}, barsBySymbol
       if (!bars || bars.length < 4) continue;
       const prior = bars.at(-3);
       const yesterday = bars.at(-2);
-      if (prior.close > 0) returns.push(yesterday.close / prior.close - 1);
-      const run = boardRun(bars, bars.length - 2, name, market);
-      if (run?.end === bars.length - 2 && run.count >= 1 && run.count <= 2 && ['ladder', 'range'].includes(run.shape)) boards += 1;
+      if (prior?.close > 0 && yesterday?.close > 0) returns.push(yesterday.close / prior.close - 1);
+      const window = rules.sectorWindow || 1;
+      const last = bars.length - 1;
+      for (let ago = 1; ago <= window; ago += 1) {
+        const idx = last - ago;
+        if (idx < 1) break;
+        if (rules.sectorAnyShape) {
+          if (isStrongBar(bars[idx], bars[idx - 1], name, market, rules)) {
+            boards += 1;
+            break;
+          }
+        } else {
+          const run = boardRun(bars, idx, name, market, rules);
+          if (run?.end === idx && run.count >= 1 && run.count <= 2 && ['ladder', 'range'].includes(run.shape)) {
+            boards += 1;
+            break;
+          }
+        }
+      }
     }
     returns.sort((a, b) => a - b);
     const mid = returns.length ? returns[Math.floor((returns.length - 1) / 2)] : null;
-    if (mid != null && mid >= 0.03 && boards >= 3) return { ok: true, list: title, boards, priorReturn: mid };
+    if (mid != null && mid + 1e-12 >= rules.minListReturn && boards >= rules.minBoards) return { ok: true, list: title, boards, priorReturn: mid };
   }
   return { ok: false, reason: '板块共振不足：前一日板块涨幅或涨停家数不够' };
 }
@@ -241,7 +398,7 @@ export function exitSetup(pos, bars, { market = 'cn', lot = 1, halfTake = false,
   const pnl = Number((last.close / entry - 1).toFixed(4));
   const ma10 = sma(bars, 10, n);
   const held = bars.filter((bar) => bar.date >= pos.entryDate && bar.date <= last.date).length;
-  const strong = isStrongBar(last, bars[n - 1], pos.symbol, market);
+  const strong = isStrongBar(last, bars[n - 1], pos.symbol, market, marketRules(market));
   const all = (reason, label) => ({ action: 'SELL', qty: pos.qty, reason, label });
   if (ma10 > 0 && last.close < ma10) return all('ma10', '收盘跌破 10 日线，清仓');
   if (pnl <= -LIMIT_PULLBACK.fullStop) return all('stop6', '亏损达到 6%，清仓');
