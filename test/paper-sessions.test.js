@@ -18,6 +18,7 @@ import { buildDiagnostics } from '../src/paper/diagnostics.js';
 import { formatPaperRunMarkdown, paperRunPayload } from '../src/paper/report.js';
 import { paperDeskAudit } from '../src/paper/audit.js';
 import {
+  entrySetup,
   floatOk,
   isStrongBar,
   liveChase,
@@ -130,6 +131,19 @@ function peerBoard() {
   rows.push(bar(30, 12.7));
   return rows;
 }
+
+test('US v2 buys the first dip that stays above the 5-day average', () => {
+  const bars = Array.from({ length: 28 }, (_, i) => bar(i, 10));
+  bars.push(bar(28, 10.6, { open: 10.15, high: 10.6, low: 10.05 }));
+  bars.push(bar(29, 10.45, { open: 10.55, high: 10.5, low: 10.4, volume: 12_000_000 }));
+  const held = entrySetup(bars, { symbol: 'PATH', market: 'us' });
+  assert.equal(held.ok, true, held.reason);
+  assert.equal(held.reason, '回撤守住 5 日线');
+  const crossOnly = entrySetup(bars, { symbol: 'PATH', market: 'us', rules: US_PULLBACK_V1 });
+  assert.equal(crossOnly.ok, false);
+  bars.push(bar(30, 10.42, { open: 10.44, high: 10.48, low: 10.38 }));
+  assert.equal(entrySetup(bars, { symbol: 'PATH', market: 'us' }).ok, false);
+});
 
 test('two co-moving US names can pass v2 and still fail the old 8% / 3-name rule', () => {
   const lists = { AAA: ['半导体'], BBB: ['半导体'], CCC: ['半导体'] };

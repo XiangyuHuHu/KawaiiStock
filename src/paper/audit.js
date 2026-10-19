@@ -71,7 +71,7 @@ export function paperDeskAudit() {
       universe: '美股清单；不足 8 只或清单缺失时用 lists/us/小孟美股.md',
       auto: '每日任务、paper:daemon、POST /api/paper/auto',
       status: '已修',
-      note: '大涨从 8% 放到 5%，总市值从约 $0.7B–$2.8B 放到 $0.5B–$20B，共振从 3 只放到 2 只。盘口和集合竞价缺失记为中性。市值读 Nasdaq summary，不再读已经空掉的 Yahoo chart marketCap。'
+      note: '大涨从 8% 放到 5%，总市值从约 $0.7B–$2.8B 放到 $0.5B–$20B，共振从同一天 3 只放到前 3 日 2 只。买点改成回撤后仍守住 5 日线的第一天。盘口缺失记为中性。市值读 Nasdaq summary。'
     }
   ];
 }

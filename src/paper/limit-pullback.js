@@ -38,7 +38,7 @@ export const LIMIT_PULLBACK = {
   volumeSpike: 1.5
 };
 
-/** A 股保持原规则：涨停、流通市值 50–200 亿、同名单至少 3 只共振。 */
+/** A 股保持原规则：涨停、流通市值 50–200 亿、同名单至少 3 只共振。买点仍是跌破 5 日线后再放量站上。 */
 export const CN_PULLBACK = {
   id: 'cn-v1',
   strongPct: null,
@@ -47,7 +47,12 @@ export const CN_PULLBACK = {
   maxFloat: LIMIT_PULLBACK.maxFloatCny,
   minBoards: 3,
   minListReturn: 0.03,
-  missingMicrostructure: 'neutral'
+  missingMicrostructure: 'neutral',
+  boardLookback: 3,
+  shapes: ['ladder', 'range'],
+  reclaim: 'cross',
+  sectorWindow: 1,
+  sectorAnyShape: false
 };
 
 /**
@@ -62,13 +67,22 @@ export const US_PULLBACK_V1 = {
   maxFloat: LIMIT_PULLBACK.maxFloatCny / FX,
   minBoards: 3,
   minListReturn: 0.03,
-  missingMicrostructure: 'neutral'
+  missingMicrostructure: 'neutral',
+  boardLookback: 3,
+  shapes: ['ladder', 'range'],
+  reclaim: 'cross',
+  sectorWindow: 1,
+  sectorAnyShape: false
 };
 
 /**
- * 美股没有 10% 涨停。5% 且收在高点附近大约是两倍日波动，名单上一个月能出现几次。
- * 流通市值放到 $0.5B–$20B：原带 $0.7B–$2.8B 把主题名单里的中型股几乎全挡在外面，又还没放到超大盘。
- * 共振从 3 只 / 中位数 3% 降到 2 只 / 1%。美股名单比 A 股涨停潮稀疏，3 只同一天都收在高点附近很少见。
+ * 美股没有 10% 涨停。5% 且收在高点附近大约是两倍日波动。
+ * 总市值放到 $0.5B–$20B：原带约 $0.7B–$2.8B 把主题名单里的中型股几乎全挡在外面。
+ * 共振从 3 只 / 中位数 3% 降到 2 只 / 1%，并且看前 3 个交易日里出现过大涨，不要求同一天。
+ * 买点不再强求跌破 5 日线再放量站上。2026-07-01 至 2026-10-16 的备用名单上，
+ * 大涨之后绝大多数交易日仍在 5 日线上方，那条 A 股条件一次都没成立。
+ * 改成：回撤没破 10 日线、收盘仍在 5 日线上、并且收在大涨收盘价下方，只取这段回撤的第一天。
+ * 跳空（pulse）在美股 5% 大涨里很常见，不再当成一字板丢掉。
  */
 export const US_PULLBACK = {
   id: 'us-v2',
@@ -78,7 +92,13 @@ export const US_PULLBACK = {
   maxFloat: 20e9,
   minBoards: 2,
   minListReturn: 0.01,
-  missingMicrostructure: 'neutral'
+  missingMicrostructure: 'neutral',
+  boardLookback: 3,
+  shapes: ['ladder', 'range', 'pulse'],
+  reclaim: 'shallow',
+  minPullback: 0.002,
+  sectorWindow: 3,
+  sectorAnyShape: true
 };
 
 export function marketRules(market, rules) {
@@ -194,18 +214,20 @@ export function entrySetup(bars, { symbol, market, company = '', rules = marketR
   const avgAmount = mean(amounts);
   if (!(avgAmount >= amountFloor(market))) return deny('近 5 日成交额不足 1 亿');
 
+  const lookback = rules.boardLookback || 3;
+  const shapes = rules.shapes || ['ladder', 'range'];
   let run = null;
-  for (let ago = 1; ago <= 3; ago += 1) {
+  for (let ago = 1; ago <= lookback; ago += 1) {
     const found = boardRun(bars, n - ago, symbol, market, rules);
     if (found && found.end === n - ago) {
       run = found;
       break;
     }
   }
-  if (!run) return deny('近 3 日没有涨停或大涨板');
+  if (!run) return deny(`近 ${lookback} 日没有涨停或大涨板`);
   if (run.count >= 3) return deny('三板及以上，不做');
   if (run.count < 1 || run.count > 2) return deny('不是首板或二板');
-  if (!['ladder', 'range'].includes(run.shape)) return deny(`形态 ${run.shape || '无法归类'}，只留阶梯和震荡`);
+  if (!shapes.includes(run.shape)) return deny(`形态 ${run.shape || '无法归类'}，只留阶梯和震荡`);
 
   const boardClose = bars[run.end].close;
   let trough = boardClose;
@@ -219,12 +241,26 @@ export function entrySetup(bars, { symbol, market, company = '', rules = marketR
   const prevMa5 = sma(bars, 5, n - 1);
   const ma10 = sma(bars, 10, n);
   if (!(last.close > ma10) || !(prevMa5 > 0) || !(ma5 > 0)) return deny('均线不足');
-  if (!(bars[n - 1].close < prevMa5 && last.close >= ma5)) return deny('还在 5 日线下，等放量站上');
+  const cross = bars[n - 1].close < prevMa5 && last.close >= ma5;
   const baseVol = mean(bars.slice(n - 5, n).map((bar) => bar.volume));
-  if (!(baseVol > 0) || last.volume < baseVol * LIMIT_PULLBACK.volumeSpike) return deny('突破 5 日线但没有放量');
+  const volOk = baseVol > 0 && last.volume >= baseVol * LIMIT_PULLBACK.volumeSpike;
+  const depth = (boardClose - last.close) / boardClose;
+  const shallowToday = last.close >= ma5 && depth >= (rules.minPullback ?? 0.002) && depth <= LIMIT_PULLBACK.maxPullback;
+  let shallowYesterday = false;
+  if (rules.reclaim === 'shallow' && n - 1 > run.end) {
+    const priorMa5 = sma(bars, 5, n - 1);
+    const priorClose = bars[n - 1].close;
+    shallowYesterday = priorMa5 > 0 && priorClose >= priorMa5 && priorClose < boardClose;
+  }
+  const shallow = rules.reclaim === 'shallow' && shallowToday && !shallowYesterday;
+  if (!(cross && volOk) && !shallow) {
+    if (!cross && !shallowToday) return deny('还在 5 日线下，等放量站上');
+    if (cross && !volOk) return deny('突破 5 日线但没有放量');
+    return deny('回撤还没形成，或这段回撤已经报过');
+  }
   return {
     ok: true,
-    reason: '放量站上 5 日线',
+    reason: cross && volOk ? '放量站上 5 日线' : '回撤守住 5 日线',
     shape: run.shape,
     boards: run.count,
     boardDate: bars[run.end].date,
@@ -306,9 +342,25 @@ export function sectorResonance(symbol, { lists = {}, members = {}, barsBySymbol
       if (!bars || bars.length < 4) continue;
       const prior = bars.at(-3);
       const yesterday = bars.at(-2);
-      if (prior.close > 0) returns.push(yesterday.close / prior.close - 1);
-      const run = boardRun(bars, bars.length - 2, name, market, rules);
-      if (run?.end === bars.length - 2 && run.count >= 1 && run.count <= 2 && ['ladder', 'range'].includes(run.shape)) boards += 1;
+      if (prior?.close > 0 && yesterday?.close > 0) returns.push(yesterday.close / prior.close - 1);
+      const window = rules.sectorWindow || 1;
+      const last = bars.length - 1;
+      for (let ago = 1; ago <= window; ago += 1) {
+        const idx = last - ago;
+        if (idx < 1) break;
+        if (rules.sectorAnyShape) {
+          if (isStrongBar(bars[idx], bars[idx - 1], name, market, rules)) {
+            boards += 1;
+            break;
+          }
+        } else {
+          const run = boardRun(bars, idx, name, market, rules);
+          if (run?.end === idx && run.count >= 1 && run.count <= 2 && ['ladder', 'range'].includes(run.shape)) {
+            boards += 1;
+            break;
+          }
+        }
+      }
     }
     returns.sort((a, b) => a - b);
     const mid = returns.length ? returns[Math.floor((returns.length - 1) / 2)] : null;
