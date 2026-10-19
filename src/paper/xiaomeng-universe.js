@@ -5,8 +5,17 @@ import { CN_PULLBACK } from './limit-pullback.js';
 
 export const XIAOMENG_CN_FILE = join(ROOT, 'lists', 'cn', '小孟中小盘.md');
 export const XIAOMENG_US_FILE = join(ROOT, 'lists', 'us', '小孟美股.md');
-const ZT_DIR = join(DATA_DIR, 'paper', 'zt-pool');
 const TICKER_RE = /\*\*([A-Z][A-Z0-9.-]{0,9})\*\*/g;
+
+export function limitUpPoolQueryDate(now = new Date()) {
+  return chinaStamp(now).replaceAll('-', '');
+}
+
+/** 不带 date 时东财返回 rc=102、data=null。date 只用当天北京日历日，更早的日期它不给。 */
+export function limitUpPoolUrl(now = new Date()) {
+  const date = limitUpPoolQueryDate(now);
+  return `https://push2ex.eastmoney.com/getTopicZTPool?ut=7eea3edcaed734bea9cbfc24409ed989&dpt=wz.ztzt&Pageindex=0&pagesize=200&sort=fbt%3Aasc&date=${date}`;
+}
 
 export function parseCnSectorMarkdown(content) {
   const lists = [];
@@ -101,31 +110,42 @@ export function limitUpRows(payload) {
   return { day, rows };
 }
 
-async function fetchLimitUpPool() {
-  const url = 'https://push2ex.eastmoney.com/getTopicZTPool?ut=7eea3edcaed734bea9cbfc24409ed989&dpt=wz.ztzt&Pageindex=0&pagesize=200&sort=fbt%3Aasc';
-  const response = await fetch(url, {
-    headers: { Referer: 'https://quote.eastmoney.com/', 'User-Agent': 'Mozilla/5.0' },
-    signal: AbortSignal.timeout(8000)
-  });
-  if (!response.ok) throw new Error(`涨停池 ${response.status}`);
-  const parsed = limitUpRows(await response.json());
-  if (!parsed.day) throw new Error('涨停池没有交易日');
+export function parseLimitUpPool(json, requestedDate) {
+  const date = String(requestedDate || '').replaceAll('-', '');
+  if (json?.data == null || (json?.rc != null && json.rc !== 0)) {
+    throw new Error(`涨停池 rc=${json?.rc ?? 'missing'}，date=${date || 'missing'}`);
+  }
+  const parsed = limitUpRows(json);
+  if (!parsed.day) throw new Error(`涨停池没有交易日 date=${date || 'missing'}`);
+  if (date && parsed.day.replaceAll('-', '') !== date) {
+    throw new Error(`涨停池交易日 ${parsed.day} 不是请求的 ${date}`);
+  }
   return parsed;
 }
 
-async function readPoolFile(day) {
+async function fetchLimitUpPool(now = new Date()) {
+  const date = limitUpPoolQueryDate(now);
+  const response = await fetch(limitUpPoolUrl(now), {
+    headers: { Referer: 'https://quote.eastmoney.com/', 'User-Agent': 'Mozilla/5.0' },
+    signal: AbortSignal.timeout(8000)
+  });
+  if (!response.ok) throw new Error(`涨停池 ${response.status}，date=${date}`);
+  return parseLimitUpPool(await response.json(), date);
+}
+
+async function readPoolFile(dir, day) {
   try {
-    const json = JSON.parse(await readFile(join(ZT_DIR, `${day}.json`), 'utf8'));
+    const json = JSON.parse(await readFile(join(dir, `${day}.json`), 'utf8'));
     return Array.isArray(json.rows) ? json.rows : [];
   } catch {
     return [];
   }
 }
 
-async function cachedPoolDays(today, keep = 4) {
+async function cachedPoolDays(dir, today, keep = 4) {
   let names = [];
   try {
-    names = await readdir(ZT_DIR);
+    names = await readdir(dir);
   } catch {
     return [];
   }
@@ -136,27 +156,27 @@ async function cachedPoolDays(today, keep = 4) {
     .slice(-keep);
 }
 
-/** 静态中小盘名单，加上本机留下的近期涨停快照。涨停池接口不返回历史日期，所以快照要靠每次纸上跑自己写。 */
-export async function loadXiaomengCnUniverse({ now = new Date(), fetcher = fetchLimitUpPool } = {}) {
+/** 静态中小盘名单，加上本机留下的近期涨停快照。涨停池只认当天北京日期，更早的日子靠已经写下的快照。 */
+export async function loadXiaomengCnUniverse({ now = new Date(), fetcher = fetchLimitUpPool, poolDir = join(DATA_DIR, 'paper', 'zt-pool') } = {}) {
   const content = await readFile(XIAOMENG_CN_FILE, 'utf8');
   const staticLists = parseCnSectorMarkdown(content);
   const today = chinaStamp(now);
-  const dynamic = { added: 0, days: [], error: null };
+  const dynamic = { added: 0, days: [], error: null, requestedDate: limitUpPoolQueryDate(now) };
   try {
-    const fresh = await fetcher();
-    if (fresh?.day && fresh.rows) {
-      await mkdir(ZT_DIR, { recursive: true });
-      await writeFile(join(ZT_DIR, `${fresh.day}.json`), `${JSON.stringify({ day: fresh.day, rows: fresh.rows }, null, 2)}\n`, 'utf8');
+    const fresh = await fetcher(now);
+    if (fresh?.day && Array.isArray(fresh.rows)) {
+      await mkdir(poolDir, { recursive: true });
+      await writeFile(join(poolDir, `${fresh.day}.json`), `${JSON.stringify({ day: fresh.day, rows: fresh.rows }, null, 2)}\n`, 'utf8');
     }
   } catch (error) {
     dynamic.error = error.message;
   }
-  const days = await cachedPoolDays(today, 4);
+  const days = await cachedPoolDays(poolDir, today, 4);
   dynamic.days = days;
   const byIndustry = new Map();
   const seedCaps = {};
   for (const day of days) {
-    for (const row of await readPoolFile(day)) {
+    for (const row of await readPoolFile(poolDir, day)) {
       if (!inFloatBand(row.floatCap)) continue;
       seedCaps[row.symbol] = row.floatCap;
       const title = `涨停:${row.industry || '其他'}`;

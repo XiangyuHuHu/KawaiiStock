@@ -130,8 +130,9 @@ function renderPaper(data) {
   const rejectionText = diag
     ? Object.entries(diag.filterRejections || {}).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([reason, count]) => `${reason} ×${count}`).join('；')
     : '';
+  const poolWarn = diag?.limitUpPool?.error ? `涨停池失败：${diag.limitUpPool.error}` : '';
   const diagLine = diag
-    ? `诊断：扫描 ${diag.scanned ?? '—'}，成交 ${diag.ordersPlaced ?? 0}${rejectionText ? `，过滤 ${rejectionText}` : ''}。`
+    ? `诊断：扫描 ${diag.scanned ?? '—'}，成交 ${diag.ordersPlaced ?? 0}${rejectionText ? `，过滤 ${rejectionText}` : ''}${poolWarn ? `。${poolWarn}` : ''}。`
     : '';
   const sold = (auto?.reviews || []).filter((row) => row.action === 'SELL' || row.action === 'TRIM');
   const held = (auto?.reviews || []).filter((row) => row.action === 'HOLD');

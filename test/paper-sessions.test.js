@@ -28,7 +28,14 @@ import {
   US_PULLBACK,
   US_PULLBACK_V1
 } from '../src/paper/limit-pullback.js';
-import { parseCnSectorMarkdown, parseUsSectorMarkdown } from '../src/paper/xiaomeng-universe.js';
+import {
+  limitUpPoolQueryDate,
+  limitUpPoolUrl,
+  loadXiaomengCnUniverse,
+  parseCnSectorMarkdown,
+  parseLimitUpPool,
+  parseUsSectorMarkdown
+} from '../src/paper/xiaomeng-universe.js';
 
 const cnOpen = Date.parse('2026-10-19T02:00:00Z');
 const usOpen = Date.parse('2026-10-19T14:00:00Z');
@@ -193,6 +200,60 @@ test('diagnostics count scans, filter reasons and placed orders', () => {
   assert.match(md, /0g/);
   assert.match(md, /日线不足/);
   assert.match(md, /liveTrading: false/);
+  assert.match(md, /2026-10-19-纸上实验-A股/);
+});
+
+test('limit-up pool uses the Beijing date and a failure stays on the desk diagnostics', async () => {
+  const morning = new Date(cnOpen);
+  assert.equal(limitUpPoolQueryDate(morning), '20261019');
+  assert.match(limitUpPoolUrl(morning), /[?&]date=20261019(?:&|$)/);
+  assert.throws(() => parseLimitUpPool({ rc: 102, data: null }, '20261019'), /rc=102/);
+  const parsed = parseLimitUpPool({
+    rc: 0,
+    data: {
+      qdate: '20261019',
+      pool: [
+        { c: '301236', n: '软通动力', ltsz: 80e8, hybk: '算力' },
+        { c: '600519', n: '贵州茅台', ltsz: 20000e8, hybk: '白酒' },
+        { c: '300001', n: 'ST测试', ltsz: 80e8, hybk: '算力' }
+      ]
+    }
+  }, '20261019');
+  assert.equal(parsed.day, '2026-10-19');
+  assert.deepEqual(parsed.rows.map((row) => row.symbol), ['301236']);
+  const dir = await mkdtemp(join(tmpdir(), 'kawaii-zt-'));
+  const saved = await loadXiaomengCnUniverse({
+    now: morning,
+    poolDir: dir,
+    fetcher: async (at) => {
+      assert.equal(limitUpPoolQueryDate(at), '20261019');
+      return parsed;
+    }
+  });
+  const file = JSON.parse(await readFile(join(dir, '2026-10-19.json'), 'utf8'));
+  assert.equal(file.rows[0].symbol, '301236');
+  assert.equal(saved.universe.dynamic.error, null);
+  assert.ok(saved.listOf['301236'].includes('涨停:算力'));
+  const failed = await loadXiaomengCnUniverse({
+    now: morning,
+    poolDir: dir,
+    fetcher: async () => { throw new Error('涨停池 rc=102，date=20261019'); }
+  });
+  assert.match(failed.universe.dynamic.error, /rc=102/);
+  assert.ok(failed.listOf['301236'].includes('涨停:算力'));
+  const diag = buildDiagnostics({
+    desk: '0g',
+    sources: { universe: failed.universe, scanned: 3, eligible: 0 },
+    fills: [],
+    skipped: []
+  });
+  assert.equal(diag.limitUpPool.ok, false);
+  assert.match(diag.limitUpPool.error, /rc=102/);
+  const md = formatPaperRunMarkdown(paperRunPayload({
+    note: '测试',
+    sessions: { '0g': { desk: '0g', diagnostics: diag, note: '测试', ok: true } }
+  }, cnOpen));
+  assert.match(md, /涨停池 rc=102/);
 });
 
 test('desk audit names the two repaired books and the intentional option freeze', () => {
@@ -250,4 +311,76 @@ test('a closed clock writes a per-desk report and does not trade', async () => {
   });
   assert.equal(child.status, 0, child.stderr + child.stdout);
   assert.match(child.stdout, /session-report-ok/);
+});
+
+test('Beijing morning files 0G under the China date without dropping the US report', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'kawaii-paper-cn-report-'));
+  const script = `
+    import { readFile } from 'node:fs/promises';
+    import { join } from 'node:path';
+    import { writePaperRunReport } from './src/paper/report.js';
+    const now = Date.parse('2026-10-19T02:00:00Z');
+    const reports = process.env.KAWAII_REPORTS_DIR;
+    await writePaperRunReport({
+      note: '上午',
+      sessions: {
+        '0g': {
+          desk: '0g',
+          note: '跑了',
+          ok: true,
+          diagnostics: {
+            market: 'cn',
+            scanned: 40,
+            eligible: 1,
+            ordersPlaced: 0,
+            filterRejections: {},
+            skipRejections: {},
+            limitUpPool: { ok: false, error: '涨停池 rc=102，date=20261019' }
+          }
+        },
+        '0h': {
+          desk: '0h',
+          note: '市场未开',
+          ok: true,
+          diagnostics: { market: 'us', scanned: null, ordersPlaced: 0, filterRejections: {}, skipRejections: { 'outside-session': 1 } }
+        }
+      }
+    }, now);
+    const us = await readFile(join(reports, '2026-10-18-纸上实验.md'), 'utf8');
+    const cn = await readFile(join(reports, '2026-10-19-纸上实验-A股.md'), 'utf8');
+    if (!us.includes('0g') || !us.includes('0h')) throw new Error('us report dropped a desk');
+    if (!us.includes('2026-10-19-纸上实验-A股')) throw new Error('us report missing companion');
+    if (!cn.includes('0g') || cn.includes('| 0h |')) throw new Error(cn);
+    if (!cn.includes('date: 2026-10-19')) throw new Error('cn report date');
+    if (!cn.includes('涨停池 rc=102')) throw new Error('cn report missing pool error');
+    await writePaperRunReport({
+      note: '稍后未开',
+      sessions: {
+        '0g': {
+          desk: '0g',
+          note: '市场未开',
+          ok: true,
+          diagnostics: { market: 'cn', scanned: null, ordersPlaced: 0, filterRejections: {}, skipRejections: {} }
+        }
+      }
+    }, now);
+    const kept = await readFile(join(reports, '2026-10-19-纸上实验-A股.md'), 'utf8');
+    if (!kept.includes('涨停池 rc=102')) throw new Error('closed stub overwrote the morning A-share report');
+    const lines = (await readFile(join(reports, '2026-10-19-纸上实验-A股.jsonl'), 'utf8')).trim().split('\\n');
+    if (lines.length !== 2) throw new Error('jsonl lines ' + lines.length);
+    console.log('cn-report-ok');
+  `;
+  const child = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+    cwd: new URL('..', import.meta.url),
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      KAWAII_DATA_DIR: join(dir, 'data'),
+      KAWAII_REPORTS_DIR: join(dir, 'reports'),
+      OBSIDIAN_PAPER: join(dir, 'paper'),
+      OBSIDIAN_VAULT: join(dir, 'vault')
+    }
+  });
+  assert.equal(child.status, 0, child.stderr + child.stdout);
+  assert.match(child.stdout, /cn-report-ok/);
 });
